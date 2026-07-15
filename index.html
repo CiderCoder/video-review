@@ -32,6 +32,9 @@
   .dir-item:hover { background: #2d2d37; }
   .dir-item .dn { flex: 1; font-size: 14.5px; font-weight: 600; word-break: break-all; }
   .dir-item .dm { font-size: 12px; color: #9a9aa5; white-space: nowrap; }
+  .dirDel { background: none; border: none; font-size: 16px; cursor: pointer; opacity: .55; padding: 6px; }
+  .dirDel:hover { opacity: 1; }
+  #safariWarn { background: #4a3416; color: #e8b84a; padding: 8px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 4px; }
   #dirEmpty { color: #666; font-size: 13px; }
 
   /* ── 編輯器 ── */
@@ -272,7 +275,20 @@
         const dn = document.createElement('div'); dn.className = 'dn'; dn.textContent = '🎬 ' + v.name.replace(/\.[^.]+$/, '');
         const dm = document.createElement('div'); dm.className = 'dm';
         dm.textContent = `${v.noteCount || 0} 條註記${v.users && v.users.length ? '|' + v.users.join('、') : ''}|${(v.updatedAt || v.uploadedAt || '').slice(0, 10)}`;
-        d.append(dn, dm);
+        const del = document.createElement('button');
+        del.className = 'dirDel'; del.textContent = '🗑'; del.title = '刪除這支影片';
+        del.onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm(`確定刪除「${v.name}」?\n影片和所有人的註記會一起刪除(影片移到 Drive 垃圾桶,30 天內可救回)。`)) return;
+          del.disabled = true; del.textContent = '…';
+          try {
+            const r = await apiPost({ action: 'deleteVideo', id: v.id });
+            if (r.ok) { renderHome(); return; }
+            alert('刪除失敗:' + (r.error || '未知錯誤'));
+          } catch (err) { alert('刪除失敗(網路)'); }
+          del.disabled = false; del.textContent = '🗑';
+        };
+        d.append(dn, dm, del);
         d.onclick = () => { location.href = `?v=${encodeURIComponent(v.id)}&n=${encodeURIComponent(v.name)}`; };
         $('dirList').append(d);
       });
@@ -335,6 +351,12 @@
     $('homeView').style.display = 'none';
     document.querySelector('main').style.display = 'flex';
     $('backBtn').hidden = false;
+    if (/^((?!chrome|crios|android|edg|fxios).)*safari/i.test(navigator.userAgent)) {
+      const w = document.createElement('div');
+      w.id = 'safariWarn';
+      w.textContent = '⚠ Safari 對雲端影片播放支援有限,影片跑不出來的話請改用 Chrome 開同一個網址(註記功能不受影響)';
+      $('stage').prepend(w);
+    }
     await askName();
     if (!videoName) {  // 網址沒帶名稱就查目錄
       try { const idx = await apiGet({ action: 'list' }); const hit = (idx.videos || []).find(x => x.id === videoId); if (hit) videoName = hit.name; } catch (e) {}
