@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>影片回饋系統</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #16161a; color: #eee; font-family: "PingFang TC", "Heiti TC", sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { padding: 10px 16px; background: #202027; display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+  header h1 { font-size: 16px; font-weight: 600; cursor: pointer; }
+  header #fileName { color: #9a9aa5; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hdrBtn { background: #2b2b33; color: #eee; border: none; border-radius: 6px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; }
+  .hdrBtn:hover { background: #3a3a44; }
+  #shareStatus { font-size: 11.5px; color: #a6e45d; }
+
+  /* ── 首頁 ── */
+  #homeView { flex: 1; overflow-y: auto; padding: 40px 20px; }
+  .home-inner { max-width: 860px; margin: 0 auto; }
+  .home-inner h2 { font-size: 24px; margin-bottom: 6px; }
+  .home-sub { color: #9a9aa5; font-size: 13.5px; margin-bottom: 24px; }
+  #dropzone { border: 2px dashed #444; border-radius: 14px; padding: 44px 20px; text-align: center; cursor: pointer; transition: border-color .15s; margin-bottom: 14px; }
+  #dropzone:hover, #dropzone.over { border-color: #e46a5d; }
+  #dropzone .big { font-size: 17px; margin-bottom: 8px; }
+  #dropzone .small { color: #9a9aa5; font-size: 12.5px; }
+  #upProgress { display: none; margin-bottom: 14px; }
+  #upBarWrap { background: #2b2b33; border-radius: 8px; height: 14px; overflow: hidden; }
+  #upBar { background: #e46a5d; height: 100%; width: 0%; transition: width .2s; }
+  #upLabel { font-size: 12.5px; color: #9a9aa5; margin-top: 6px; }
+  .dir-title { font-size: 15px; font-weight: 600; margin: 26px 0 10px; color: #e8b84a; }
+  .dir-item { background: #24242c; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; cursor: pointer; display: flex; align-items: center; gap: 12px; }
+  .dir-item:hover { background: #2d2d37; }
+  .dir-item .dn { flex: 1; font-size: 14.5px; font-weight: 600; word-break: break-all; }
+  .dir-item .dm { font-size: 12px; color: #9a9aa5; white-space: nowrap; }
+  #dirEmpty { color: #666; font-size: 13px; }
+
+  /* ── 編輯器 ── */
+  main { flex: 1; display: none; min-height: 0; }
+  #stage { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px 12px 30px; gap: 10px; }
+  #videoWrap { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #videoBox { position: relative; }
+  video { display: block; max-width: calc(100vw - 380px); max-height: calc(100vh - 280px); background: #000; border-radius: 6px; }
+  #ink { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+  #controls { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+  #seekRow { display: flex; align-items: center; gap: 10px; }
+  #seek { flex: 1; accent-color: #e46a5d; }
+  #timeLabel { font-variant-numeric: tabular-nums; font-size: 13px; color: #bbb; min-width: 110px; text-align: right; }
+  #btnRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  #btnRow button { background: #2b2b33; color: #eee; border: none; border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer; }
+  #btnRow button:hover { background: #3a3a44; }
+  #btnRow button.primary { background: #e46a5d; font-weight: 600; }
+  #btnRow button.armed { background: #e8b84a; color: #16161a; font-weight: 700; }
+  #btnRow .sep { width: 1px; height: 22px; background: #3a3a44; margin: 0 4px; }
+  #btnRow .hint { color: #777; font-size: 11.5px; margin-left: auto; }
+  #noteRow { display: flex; gap: 10px; }
+  #noteText { flex: 1; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 10px; padding: 17px 16px; font-size: 15px; }
+  #noteText:focus { outline: none; border-color: #e46a5d; }
+  #saveNote { background: #e46a5d; color: #fff; border: none; border-radius: 10px; padding: 0 28px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  aside { flex: 0 0 320px; background: #1c1c22; border-left: 1px solid #2b2b33; display: flex; flex-direction: column; min-height: 0; }
+  aside h3 { font-size: 13px; color: #9a9aa5; padding: 12px 14px 6px; }
+  #globalNotes { margin: 0 14px; height: 84px; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 8px 10px; font-size: 13px; resize: vertical; }
+  #globalNotes:focus { outline: none; border-color: #e46a5d; }
+  #noteList { flex: 1; overflow-y: auto; list-style: none; padding: 6px 14px; display: flex; flex-direction: column; gap: 8px; }
+  #noteList li { background: #24242c; border-radius: 8px; padding: 8px; display: flex; gap: 8px; }
+  #noteList img { width: 74px; border-radius: 4px; cursor: pointer; align-self: flex-start; }
+  #noteList .meta { flex: 1; min-width: 0; }
+  #noteList .tc { color: #e46a5d; font-size: 12px; font-weight: 600; cursor: pointer; }
+  #noteList .by { color: #e8b84a; font-size: 11px; margin-left: 6px; }
+  #noteList .txt { font-size: 12.5px; color: #ddd; margin-top: 3px; word-break: break-word; white-space: pre-wrap; }
+  #noteList .del { background: none; border: none; color: #666; cursor: pointer; font-size: 14px; align-self: flex-start; }
+  #noteList .del:hover { color: #e46a5d; }
+  #pdfBtn { margin: 10px 14px 8px; padding: 12px; background: #e8b84a; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  #exportBtn { margin: 0 14px 14px; padding: 12px; background: #a6e45d; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  #exportMsg { text-align: center; font-size: 12px; color: #a6e45d; padding-bottom: 10px; min-height: 16px; }
+
+  /* ── 問名字小視窗 ── */
+  #nameModal { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 60; display: flex; align-items: center; justify-content: center; }
+  #nameModal[hidden] { display: none !important; }
+  #nameBox { background: #24242c; border-radius: 14px; padding: 28px 30px; width: min(360px, 90vw); text-align: center; }
+  #nameBox h2 { font-size: 17px; margin-bottom: 6px; }
+  #nameBox p { color: #9a9aa5; font-size: 12.5px; margin-bottom: 16px; }
+  #nameInput { width: 100%; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 12px 14px; font-size: 15px; text-align: center; }
+  #nameInput:focus { outline: none; border-color: #e46a5d; }
+  #nameOk { margin-top: 14px; width: 100%; padding: 12px; background: #e46a5d; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
+
+  /* ── PDF 報告(列印時才出現)── */
+  #printReport { display: none; }
+  @media print {
+    @page { margin: 14mm; }
+    body { height: auto; overflow: visible; background: #fff; display: block; }
+    header, main, #homeView, #nameModal { display: none !important; }
+    #printReport { display: block; color: #111; }
+    .pr-head h1 { font-size: 22px; margin-bottom: 4px; }
+    .pr-meta { font-size: 12px; color: #555; margin-bottom: 14px; }
+    .pr-global { border: 1.5px solid #111; border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 14px; line-height: 1.6; break-inside: avoid; }
+    .pr-label { font-size: 12px; font-weight: 700; color: #e46a5d; margin-bottom: 4px; }
+    .pr-grid { display: grid; grid-template-columns: 1fr; gap: 4mm; }
+    .pr-note { display: flex; gap: 5mm; align-items: flex-start; break-inside: avoid; border: 1px solid #ddd; border-radius: 6px; padding: 3mm; }
+    .pr-note img { height: 52mm; width: auto; max-width: 60%; object-fit: contain; border: 1px solid #ccc; border-radius: 4px; flex: 0 0 auto; }
+    .pr-body { flex: 1; min-width: 0; }
+    .pr-tc { font-size: 15px; font-weight: 800; color: #e46a5d; margin-bottom: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .pr-txt { font-size: 13px; line-height: 1.65; word-break: break-word; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="homeLink">🎬 影片回饋系統</h1>
+  <span id="fileName"></span>
+  <span style="flex:1"></span>
+  <span id="shareStatus"></span>
+  <button id="backBtn" class="hdrBtn" hidden>← 回目錄</button>
+</header>
+
+<div id="homeView">
+  <div class="home-inner">
+    <h2>上傳影片開始審片</h2>
+    <div class="home-sub">拖影片進來就會自動上傳,完成後直接進入編輯畫面;每支影片有自己的網址,註記自動儲存、所有人共見。</div>
+    <div id="dropzone">
+      <div class="big">⬆️ 把影片拖到這裡,或點一下選檔</div>
+      <div class="small">支援 mp4 / mov,上傳到共用空間(建議 1GB 以內)</div>
+      <input type="file" id="upInput" accept="video/*" hidden>
+    </div>
+    <div id="upProgress">
+      <div id="upBarWrap"><div id="upBar"></div></div>
+      <div id="upLabel">上傳中…</div>
+    </div>
+    <div class="dir-title">📚 歷史影片</div>
+    <div id="dirList"><div id="dirEmpty">載入中…</div></div>
+  </div>
+</div>
+
+<main>
+  <section id="stage">
+    <div id="videoWrap">
+      <div id="videoBox">
+        <video id="video" playsinline crossorigin="anonymous"></video>
+        <canvas id="ink"></canvas>
+      </div>
+    </div>
+    <div id="controls">
+      <div id="seekRow">
+        <input type="range" id="seek" min="0" max="1000" value="0">
+        <span id="timeLabel">0:00.0 / 0:00.0</span>
+      </div>
+      <div id="btnRow">
+        <button id="playBtn" class="primary">▶ 播放</button>
+        <button data-skip="-1">−1s</button>
+        <button data-skip="-0.0333">−1格</button>
+        <button data-skip="0.0333">+1格</button>
+        <button data-skip="1">+1s</button>
+        <span class="sep"></span>
+        <button id="rangeBtn">⊢ 標記起點</button>
+        <span class="sep"></span>
+        <button data-rate="0.5">0.5x</button>
+        <button data-rate="1">1x</button>
+        <button data-rate="1.5">1.5x</button>
+        <span class="sep"></span>
+        <button id="undoBtn">↩ 上一筆</button>
+        <button id="clearBtn">清除畫筆</button>
+        <span class="hint">空白鍵=播放/暫停 暫停後Enter=跳到輸入欄 欄位空白按空白鍵/打字中連按兩下空白=繼續播放 ←→=0.5s ,.=逐格 | 暫停時直接畫紅筆 | 標一段:標記起點→播到結尾按標記結尾→打字送出</span>
+      </div>
+      <div id="noteRow">
+        <input id="noteText" placeholder="這一幕要改什麼?(打完按 Enter 或「存這一幕」,會連紅筆+時間碼一起自動儲存)">
+        <button id="saveNote">存這一幕</button>
+      </div>
+    </div>
+  </section>
+  <aside>
+    <h3>整體指示(標題/音樂/風格這種不綁定畫面的)</h3>
+    <textarea id="globalNotes" placeholder="例:標題改 iOS27照片新功能,這次不用小標;音樂放 newjeans y2k 感"></textarea>
+    <h3>逐幕註記(自動儲存,點時間碼可跳回該幕)</h3>
+    <ol id="noteList"></ol>
+    <button id="pdfBtn">📄 輸出 PDF(給人看的圖文對照)</button>
+    <button id="exportBtn">📤 輸出給 Claude(md+圖,到「下載」)</button>
+    <div id="exportMsg"></div>
+  </aside>
+</main>
+
+<div id="nameModal" hidden>
+  <div id="nameBox">
+    <h2>你的名字?</h2>
+    <p>你的註記會標這個名字,只問一次</p>
+    <input id="nameInput" placeholder="例:蘋果妹">
+    <button id="nameOk">開始標記</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  /* ══ 設定(部署後填入)══ */
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbx1k11D5coWNMPAoY9h7Y5QhUF1nFNmhwlp7zk0LuAJRsAlMaYjnSXktaWkH2Mao7k/exec';
+  const DRIVE_KEY = 'AIzaSyC31MPtDi5mwkqu7ZJWLqyjlBHpjO9J7kE';
+
+  const $ = id => document.getElementById(id);
+  const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+  const esc = s => String(s).replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+
+  async function apiGet(params) {
+    const r = await fetch(GAS_URL + '?' + new URLSearchParams(params));
+    return r.json();
+  }
+  async function apiPost(obj) {
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(obj) });  // text/plain,免預檢
+    return r.json();
+  }
+
+  const qs = new URLSearchParams(location.search);
+  const videoId = qs.get('v');
+  let videoName = qs.get('n') || '';
+  let userName = localStorage.getItem('reviewerName') || '';
+
+  /* ══ 名字小視窗 ══ */
+  function askName() {
+    return new Promise(res => {
+      if (userName) return res(userName);
+      $('nameModal').hidden = false;
+      $('nameInput').focus();
+      const ok = () => {
+        const v = $('nameInput').value.trim();
+        if (!v) return;
+        userName = v;
+        localStorage.setItem('reviewerName', v);
+        $('nameModal').hidden = true;
+        res(v);
+      };
+      $('nameOk').onclick = ok;
+      $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) ok(); });
+    });
+  }
+
+  /* ══ 首頁:目錄+上傳 ══ */
+  async function renderHome() {
+    document.title = '影片回饋系統';
+    $('homeView').style.display = 'block';
+    try {
+      const idx = await apiGet({ action: 'list' });
+      const box = $('dirList');
+      box.innerHTML = '';
+      const vids = (idx.videos || []).filter(v => v.name);
+      if (!vids.length) { box.innerHTML = '<div id="dirEmpty">(還沒有影片——上傳第一支吧)</div>'; return; }
+      vids.forEach(v => {
+        const d = document.createElement('div');
+        d.className = 'dir-item';
+        const dn = document.createElement('div'); dn.className = 'dn'; dn.textContent = '🎬 ' + v.name.replace(/\.[^.]+$/, '');
+        const dm = document.createElement('div'); dm.className = 'dm';
+        dm.textContent = `${v.noteCount || 0} 條註記${v.users && v.users.length ? '|' + v.users.join('、') : ''}|${(v.updatedAt || v.uploadedAt || '').slice(0, 10)}`;
+        d.append(dn, dm);
+        d.onclick = () => { location.href = `?v=${encodeURIComponent(v.id)}&n=${encodeURIComponent(v.name)}`; };
+        $('dirList').append(d);
+      });
+    } catch (e) { $('dirList').innerHTML = '<div id="dirEmpty">⚠ 讀不到目錄,檢查網路或後端設定</div>'; }
+  }
+
+  const dz = $('dropzone');
+  dz.onclick = () => $('upInput').click();
+  $('upInput').onchange = e => { if (e.target.files[0]) uploadFile(e.target.files[0]); };
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+
+  async function uploadFile(file) {
+    if (!/\.(mp4|mov|m4v|webm)$/i.test(file.name) && !file.type.startsWith('video')) { alert('請選影片檔'); return; }
+    $('upProgress').style.display = 'block';
+    $('upLabel').textContent = '準備上傳…';
+    try {
+      const init = await apiPost({ action: 'initUpload', name: file.name, size: file.size, mime: file.type || 'video/mp4' });
+      if (!init.uploadUrl) throw new Error(init.error || 'init 失敗');
+      const CH = 8 * 1024 * 1024;
+      let offset = 0, fileMeta = null;
+      while (offset < file.size) {
+        const end = Math.min(offset + CH, file.size);
+        const resp = await fetch(init.uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Range': `bytes ${offset}-${end - 1}/${file.size}` },
+          body: file.slice(offset, end)
+        });
+        if (resp.status !== 308 && !resp.ok) throw new Error('上傳中斷(' + resp.status + '),重整頁面再試');
+        if (resp.ok && resp.status !== 308) fileMeta = await resp.json();
+        offset = end;
+        const pct = Math.round(offset / file.size * 100);
+        $('upBar').style.width = pct + '%';
+        $('upLabel').textContent = `上傳中 ${pct}%(${(offset / 1048576).toFixed(0)} / ${(file.size / 1048576).toFixed(0)} MB)`;
+      }
+      $('upLabel').textContent = '收尾中…';
+      await apiPost({ action: 'finishUpload', id: fileMeta.id, name: file.name, size: file.size });
+      location.href = `?v=${encodeURIComponent(fileMeta.id)}&n=${encodeURIComponent(file.name)}`;
+    } catch (e) {
+      $('upLabel').textContent = '⚠ ' + (e.message || '上傳失敗');
+    }
+  }
+
+  /* ══ 編輯器 ══ */
+  const video = $('video'), ink = $('ink'), ctx = ink.getContext('2d');
+  const notes = [];
+  let extNotes = [], sharedGlobals = [];
+  let strokes = [], cur = null;
+  function combined() {
+    const arr = [];
+    notes.forEach(n => arr.push({ n, own: true }));
+    extNotes.forEach(n => arr.push({ n, own: false }));
+    arr.sort((a, b) => a.n.t - b.n.t);
+    return arr;
+  }
+  const setStatus = s => { $('shareStatus').textContent = s; };
+
+  async function openEditor() {
+    $('homeView').style.display = 'none';
+    document.querySelector('main').style.display = 'flex';
+    $('backBtn').hidden = false;
+    await askName();
+    if (!videoName) {  // 網址沒帶名稱就查目錄
+      try { const idx = await apiGet({ action: 'list' }); const hit = (idx.videos || []).find(x => x.id === videoId); if (hit) videoName = hit.name; } catch (e) {}
+      videoName = videoName || '影片';
+    }
+    $('fileName').textContent = videoName;
+    document.title = videoName.replace(/\.[^.]+$/, '') + '|影片回饋';
+    video.src = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(videoId)}?alt=media&key=${DRIVE_KEY}`;
+    video.addEventListener('error', () => setStatus('⚠ 影片載入失敗(檢查 API key/權限)'), { once: true });
+    await loadNotes();
+    setInterval(refreshOthers, 45000);  // 定期撿別人的新註記
+  }
+  $('backBtn').onclick = () => { location.href = location.pathname; };
+  $('homeLink').onclick = () => { location.href = location.pathname; };
+
+  async function loadNotes() {
+    try {
+      const d = await apiGet({ action: 'notes', v: videoId });
+      notes.length = 0; extNotes = []; sharedGlobals = [];
+      (d.notes || []).forEach(n => {
+        if (n.user === userName) { delete n.user; notes.push(n); }
+        else extNotes.push(n);
+      });
+      (d.globals || []).forEach(g => {
+        if (g.user === userName) $('globalNotes').value = g.text;
+        else sharedGlobals.push(g);
+      });
+      renderList();
+      setStatus(`已載入 ${combined().length} 條註記`);
+    } catch (e) { setStatus('⚠ 註記載入失敗'); }
+  }
+  async function refreshOthers() {
+    try {
+      const d = await apiGet({ action: 'notes', v: videoId });
+      extNotes = (d.notes || []).filter(n => n.user !== userName);
+      sharedGlobals = (d.globals || []).filter(g => g.user !== userName);
+      renderList();
+    } catch (e) {}
+  }
+
+  let saveTimer = null;
+  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 800); }
+  async function saveNow() {
+    try {
+      setStatus('儲存中…');
+      const r = await apiPost({ action: 'saveNotes', v: videoId, user: userName, videoName, global: $('globalNotes').value, notes });
+      setStatus(r.ok ? '已自動儲存 ' + new Date().toLocaleTimeString('zh-TW') : '⚠ 儲存失敗');
+    } catch (e) { setStatus('⚠ 儲存失敗(網路?),註記還在頁面上,恢復連線會再存'); }
+  }
+  $('globalNotes').addEventListener('input', saveSoon);
+
+  /* ── 畫布 ── */
+  function fitCanvas() {
+    const r = video.getBoundingClientRect();
+    if (!r.width) return;
+    ink.width = r.width * devicePixelRatio;
+    ink.height = r.height * devicePixelRatio;
+    ink.style.width = r.width + 'px';
+    ink.style.height = r.height + 'px';
+    redraw();
+  }
+  video.addEventListener('loadedmetadata', () => { fitCanvas(); $('timeLabel').textContent = `${fmt(0)} / ${fmt(video.duration)}`; });
+  new ResizeObserver(fitCanvas).observe(video);
+  function redraw() {
+    ctx.clearRect(0, 0, ink.width, ink.height);
+    ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#ff2d2d';
+    ctx.lineWidth = 5 * devicePixelRatio;
+    for (const s of strokes) {
+      ctx.beginPath();
+      s.forEach((p, i) => i ? ctx.lineTo(p[0] * ink.width, p[1] * ink.height) : ctx.moveTo(p[0] * ink.width, p[1] * ink.height));
+      ctx.stroke();
+    }
+  }
+  ink.addEventListener('pointerdown', e => {
+    if (!video.src) return;
+    if (!video.paused) video.pause();
+    ink.setPointerCapture(e.pointerId);
+    cur = [];
+    strokes.push(cur);
+    addPoint(e);
+  });
+  ink.addEventListener('pointermove', e => { if (cur) addPoint(e); });
+  ink.addEventListener('pointerup', () => cur = null);
+  function addPoint(e) {
+    const r = ink.getBoundingClientRect();
+    cur.push([(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]);
+    redraw();
+  }
+  $('undoBtn').onclick = () => { strokes.pop(); redraw(); };
+  $('clearBtn').onclick = () => { strokes = []; redraw(); };
+
+  /* ── 區間標記 ── */
+  let rangeStart = null, rangeEnd = null;
+  function updateRangeBtn() {
+    const b = $('rangeBtn');
+    if (rangeStart === null) { b.textContent = '⊢ 標記起點'; b.classList.remove('armed'); }
+    else if (rangeEnd === null) { b.textContent = `⊣ 標記結尾(起 ${fmt(rangeStart)})`; b.classList.add('armed'); }
+    else { b.textContent = `區間 ${fmt(rangeStart)}→${fmt(rangeEnd)}(按此取消)`; b.classList.add('armed'); }
+  }
+  $('rangeBtn').onclick = () => {
+    if (!video.src) return;
+    if (rangeStart === null) rangeStart = video.currentTime;
+    else if (rangeEnd === null) {
+      rangeEnd = video.currentTime;
+      if (rangeEnd < rangeStart) [rangeStart, rangeEnd] = [rangeEnd, rangeStart];
+    } else { rangeStart = rangeEnd = null; }
+    updateRangeBtn();
+  };
+
+  /* ── 播放控制 ── */
+  $('playBtn').onclick = () => video.paused ? video.play() : video.pause();
+  video.addEventListener('play', () => { $('playBtn').textContent = '⏸ 暫停'; strokes = []; redraw(); });
+  video.addEventListener('pause', () => $('playBtn').textContent = '▶ 播放');
+  video.addEventListener('timeupdate', () => {
+    $('seek').value = video.duration ? video.currentTime / video.duration * 1000 : 0;
+    $('timeLabel').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration || 0)}`;
+  });
+  $('seek').oninput = e => { video.currentTime = e.target.value / 1000 * (video.duration || 0); };
+  document.querySelectorAll('[data-skip]').forEach(b =>
+    b.onclick = () => { video.pause(); video.currentTime = Math.max(0, video.currentTime + parseFloat(b.dataset.skip)); });
+  document.querySelectorAll('[data-rate]').forEach(b =>
+    b.onclick = () => video.playbackRate = parseFloat(b.dataset.rate));
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input[type=text], input:not([type]), textarea')) return;
+    if (!video.src || !videoId) return;
+    if (e.code === 'Space') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+    if (e.key === 'Enter' && video.paused) { e.preventDefault(); $('noteText').focus(); }
+    if (e.key === 'ArrowLeft')  { video.pause(); video.currentTime -= 0.5; }
+    if (e.key === 'ArrowRight') { video.pause(); video.currentTime += 0.5; }
+    if (e.key === ',') { video.pause(); video.currentTime -= 1 / 30; }
+    if (e.key === '.') { video.pause(); video.currentTime += 1 / 30; }
+  });
+
+  /* ── 存註記 ── */
+  function captureFrame() {
+    try {
+      const w = Math.min(video.videoWidth, 720);
+      const h = Math.round(video.videoHeight * w / video.videoWidth);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d');
+      g.drawImage(video, 0, 0, w, h);
+      g.lineCap = g.lineJoin = 'round';
+      g.strokeStyle = '#ff2d2d';
+      g.lineWidth = w / 200;
+      for (const s of strokes) {
+        g.beginPath();
+        s.forEach((p, i) => i ? g.lineTo(p[0] * w, p[1] * h) : g.moveTo(p[0] * w, p[1] * h));
+        g.stroke();
+      }
+      return c.toDataURL('image/jpeg', 0.82);
+    } catch (e) { return null; }  // 跨域污染等情況:存文字不存圖
+  }
+  function saveNoteFn() {
+    if (!video.src) return;
+    const text = $('noteText').value.trim();
+    if (!text && !strokes.length) return;
+    video.pause();
+    let t = video.currentTime, t2 = null;
+    if (rangeStart !== null) {
+      t = rangeStart;
+      t2 = rangeEnd !== null ? rangeEnd : video.currentTime;
+      if (t2 < t) [t, t2] = [t2, t];
+      if (t2 - t < 0.05) t2 = null;
+      rangeStart = rangeEnd = null;
+      updateRangeBtn();
+    }
+    notes.push({ t, t2, text, img: captureFrame(), hasInk: strokes.length > 0 });
+    notes.sort((a, b) => a.t - b.t);
+    $('noteText').value = '';
+    strokes = []; redraw();
+    renderList();
+    saveSoon();
+  }
+  $('saveNote').onclick = saveNoteFn;
+  let lastSpaceTs = 0;
+  $('noteText').addEventListener('keydown', e => {
+    if (e.isComposing || e.keyCode === 229) return;  // 注音/IME 組字中不動作
+    if (e.key === 'Enter') saveNoteFn();
+    if (e.code === 'Space') {
+      if (!$('noteText').value.trim() && video.src) {
+        e.preventDefault();
+        $('noteText').value = '';
+        $('noteText').blur();
+        video.paused ? video.play() : video.pause();
+      } else if (video.src) {
+        const now = Date.now();
+        if (now - lastSpaceTs < 350) {
+          e.preventDefault();
+          $('noteText').value = $('noteText').value.replace(/ $/, '');
+          $('noteText').blur();
+          video.play();
+        }
+        lastSpaceTs = now;
+      }
+    }
+  });
+
+  function renderList() {
+    const ol = $('noteList');
+    ol.innerHTML = '';
+    combined().forEach(item => {
+      const n = item.n;
+      const li = document.createElement('li');
+      if (n.img) { const im = document.createElement('img'); im.src = n.img; im.onclick = () => { video.currentTime = n.t; video.pause(); }; li.append(im); }
+      const meta = document.createElement('div'); meta.className = 'meta';
+      const tc = document.createElement('div'); tc.className = 'tc'; tc.textContent = '⏱ ' + fmt(n.t) + (n.t2 != null ? ' → ' + fmt(n.t2) : '');
+      if (!item.own && n.user) { const by = document.createElement('span'); by.className = 'by'; by.textContent = n.user; tc.append(by); }
+      const tx = document.createElement('div'); tx.className = 'txt'; tx.textContent = n.text || '(只有畫圖)';
+      tc.onclick = () => { video.currentTime = n.t; video.pause(); };
+      meta.append(tc, tx); li.append(meta);
+      if (item.own) {
+        const del = document.createElement('button'); del.className = 'del'; del.textContent = '✕';
+        del.onclick = () => { notes.splice(notes.indexOf(n), 1); renderList(); saveSoon(); };
+        li.append(del);
+      }
+      ol.append(li);
+    });
+  }
+
+  /* ── 報告(PDF/md)── */
+  function reportBody(name, dur, globals, list) {
+    let h = `<div class="pr-head"><h1>影片修改清單</h1><div class="pr-meta">${esc(name)}${dur ? '|片長 ' + fmt(dur) : ''}|${new Date().toLocaleString('zh-TW')}|逐幕註記 ${list.length} 條</div></div>`;
+    globals.forEach(g => {
+      if (g.text && g.text.trim()) h += `<div class="pr-global"><div class="pr-label">整體指示${g.user ? '(' + esc(g.user) + ')' : ''}</div>${esc(g.text.trim()).replace(/\n/g, '<br>')}</div>`;
+    });
+    h += '<div class="pr-grid">';
+    list.forEach((it, i) => {
+      const n = it.n;
+      const by = n.user && !it.own ? `&nbsp;<span style="color:#888;font-size:12px">${esc(n.user)}</span>` : '';
+      h += `<div class="pr-note">${n.img ? `<img src="${n.img}">` : ''}<div class="pr-body"><div class="pr-tc">#${i + 1}&nbsp;&nbsp;⏱ ${fmt(n.t)}${n.t2 != null ? ' → ' + fmt(n.t2) : ''}${by}</div><div class="pr-txt">${esc(n.text || '(見圖上紅筆圈選處)')}</div></div></div>`;
+    });
+    h += '</div>';
+    return h;
+  }
+  $('pdfBtn').onclick = () => {
+    const rep = document.createElement('div');
+    rep.id = 'printReport';
+    rep.innerHTML = reportBody(videoName, video.duration || 0, [{ user: userName, text: $('globalNotes').value }, ...sharedGlobals], combined());
+    document.body.append(rep);
+    const oldTitle = document.title;
+    document.title = videoName.replace(/\.[^.]+$/, '') + '_回饋';
+    window.addEventListener('afterprint', () => { rep.remove(); document.title = oldTitle; }, { once: true });
+    window.print();
+  };
+  $('exportBtn').onclick = async () => {
+    const stem = videoName.replace(/\.[^.]+$/, '').replace(/[^\w一-鿿-]+/g, '_');
+    const dl = (name, href) => {
+      const a = document.createElement('a');
+      a.href = href; a.download = name;
+      document.body.append(a); a.click(); a.remove();
+    };
+    const list = combined();
+    let md = `# 影片回饋:${videoName}\n輸出時間:${new Date().toLocaleString('zh-TW')}|片長:${fmt(video.duration || 0)}|網址:${location.href}\n\n## 整體指示\n${$('globalNotes').value.trim() || '(無)'}\n`;
+    sharedGlobals.forEach(g => { if (g.text && g.text.trim()) md += `【${g.user}】${g.text.trim()}\n`; });
+    md += `\n## 逐幕註記\n`;
+    for (let i = 0; i < list.length; i++) {
+      const n = list[i].n;
+      const by = !list[i].own && n.user ? `【${n.user}】` : '';
+      let imgPart = '(無圖)';
+      if (n.img) {
+        const imgName = `回饋_${stem}_${String(i + 1).padStart(2, '0')}_${fmt(n.t).replace(':', 'm').replace('.', '-')}s.jpg`;
+        imgPart = `(圖:${imgName})`;
+        dl(imgName, n.img);
+        await new Promise(r => setTimeout(r, 350));
+      }
+      md += `${i + 1}. [${fmt(n.t)}${n.t2 != null ? '→' + fmt(n.t2) : ''}] ${by}${n.text || '(見圖上紅筆)'}${imgPart}\n`;
+    }
+    dl(`回饋_${stem}.md`, 'data:text/markdown;charset=utf-8,' + encodeURIComponent(md));
+    $('exportMsg').textContent = `已輸出 ${list.length} 條註記+1 份 md`;
+  };
+
+  /* ══ 路由 ══ */
+  if (videoId) openEditor();
+  else renderHome();
+})();
+</script>
+</body>
+</html>
