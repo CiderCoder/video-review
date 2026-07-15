@@ -73,12 +73,26 @@
   #exportBtn { margin: 0 14px 14px; padding: 12px; background: #a6e45d; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
   #exportMsg { text-align: center; font-size: 12px; color: #a6e45d; padding-bottom: 10px; min-height: 16px; }
 
+  /* ── 平板/手機:改上下排列 ── */
+  @media (max-width: 1024px) {
+    body { overflow: auto; height: auto; min-height: 100vh; }
+    main { flex-direction: column; }
+    video { max-width: calc(100vw - 24px); max-height: 52vh; }
+    aside { flex: 0 0 auto; border-left: none; border-top: 1px solid #2b2b33; }
+    #noteList { max-height: 44vh; }
+    #btnRow .hint { display: none; }
+    #noteText, #globalNotes, #nameInput { font-size: 16px; }  /* 防 iOS 聚焦自動放大 */
+  }
+
   /* ── 問名字小視窗 ── */
   #nameModal { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 60; display: flex; align-items: center; justify-content: center; }
   #nameModal[hidden] { display: none !important; }
   #nameBox { background: #24242c; border-radius: 14px; padding: 28px 30px; width: min(360px, 90vw); text-align: center; }
   #nameBox h2 { font-size: 17px; margin-bottom: 6px; }
   #nameBox p { color: #9a9aa5; font-size: 12.5px; margin-bottom: 16px; }
+  #namePresets { display: flex; gap: 10px; margin-bottom: 14px; }
+  .namePreset { flex: 1; padding: 16px 8px; background: #e8b84a; color: #16161a; border: none; border-radius: 10px; font-size: 17px; font-weight: 700; cursor: pointer; }
+  .namePreset:hover { background: #f0c65e; }
   #nameInput { width: 100%; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 12px 14px; font-size: 15px; text-align: center; }
   #nameInput:focus { outline: none; border-color: #e46a5d; }
   #nameOk { margin-top: 14px; width: 100%; padding: 12px; background: #e46a5d; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
@@ -179,9 +193,10 @@
 
 <div id="nameModal" hidden>
   <div id="nameBox">
-    <h2>你的名字?</h2>
-    <p>你的註記會標這個名字,只問一次</p>
-    <input id="nameInput" placeholder="例:蘋果妹">
+    <h2>你是誰?</h2>
+    <p>你的註記會標這個名字</p>
+    <div id="namePresets"></div>
+    <input id="nameInput" placeholder="或輸入其他名字">
     <button id="nameOk">開始標記</button>
   </div>
 </div>
@@ -210,19 +225,31 @@
   let videoName = qs.get('n') || '';
   let userName = localStorage.getItem('reviewerName') || '';
 
-  /* ══ 名字小視窗 ══ */
+  /* ══ 名字小視窗(每次進審片頁都問,常用名字做成按鈕)══ */
+  const PRESET_NAMES = ['果妹', 'Joey'];
   function askName() {
     return new Promise(res => {
-      if (userName) return res(userName);
       $('nameModal').hidden = false;
-      $('nameInput').focus();
-      const ok = () => {
-        const v = $('nameInput').value.trim();
-        if (!v) return;
+      const pick = v => {
         userName = v;
         localStorage.setItem('reviewerName', v);
         $('nameModal').hidden = true;
         res(v);
+      };
+      const box = $('namePresets');
+      box.innerHTML = '';
+      PRESET_NAMES.forEach(nm => {
+        const b = document.createElement('button');
+        b.className = 'namePreset';
+        b.textContent = nm;
+        b.onclick = () => pick(nm);
+        box.append(b);
+      });
+      $('nameInput').value = (userName && !PRESET_NAMES.includes(userName)) ? userName : '';
+      const ok = () => {
+        const v = $('nameInput').value.trim();
+        if (!v) return;
+        pick(v);
       };
       $('nameOk').onclick = ok;
       $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) ok(); });
@@ -315,8 +342,20 @@
     }
     $('fileName').textContent = videoName;
     document.title = videoName.replace(/\.[^.]+$/, '') + '|影片回饋';
-    video.src = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(videoId)}?alt=media&key=${DRIVE_KEY}`;
-    video.addEventListener('error', () => setStatus('⚠ 影片載入失敗(檢查 API key/權限)'), { once: true });
+    const mediaUrl = () => `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(videoId)}?alt=media&key=${DRIVE_KEY}`;
+    let triedCompat = false;
+    video.addEventListener('error', () => {
+      if (!triedCompat) {  // Safari 等瀏覽器對跨站影片較嚴:退一步用相容模式重載(截圖功能可能受限)
+        triedCompat = true;
+        setStatus('用相容模式重新載入影片…');
+        video.removeAttribute('crossorigin');
+        video.src = mediaUrl();
+        video.load();
+      } else {
+        setStatus('⚠ 影片載入失敗(錯誤碼 ' + (video.error ? video.error.code : '?') + '),請截圖回報');
+      }
+    });
+    video.src = mediaUrl();
     await loadNotes();
     setInterval(refreshOthers, 45000);  // 定期撿別人的新註記
   }
