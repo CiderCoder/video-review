@@ -91,6 +91,10 @@
     #noteText, #globalNotes, #nameInput { font-size: 16px; }  /* 防 iOS 聚焦自動放大 */
   }
 
+  /* ── 浮動通知(自動出現+消失)── */
+  #toast { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%) translateY(20px); background: #a6e45d; color: #16161a; padding: 14px 26px; border-radius: 12px; font-size: 15px; font-weight: 700; z-index: 80; opacity: 0; transition: all .3s; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,.45); }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
   /* ── 問名字小視窗 ── */
   #nameModal { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 60; display: flex; align-items: center; justify-content: center; }
   #nameModal[hidden] { display: none !important; }
@@ -233,6 +237,14 @@
   let videoName = qs.get('n') || '';
   let userName = localStorage.getItem('reviewerName') || '';
   const fmtSize = b => !b ? '' : b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : (b / 1048576).toFixed(0) + ' MB';
+  function toast(msg, ms) {  // 自動出現+消失的通知
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.append(t); }
+    t.textContent = msg;
+    requestAnimationFrame(() => t.classList.add('show'));
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), ms || 2500);
+  }
 
   /* ══ 名字小視窗(每次進審片頁都問,常用名字做成按鈕)══ */
   const PRESET_NAMES = ['果妹', 'Joey'];
@@ -269,14 +281,15 @@
   async function renderHome() {
     document.title = '影片回饋系統';
     $('homeView').style.display = 'block';
-    (async () => {  // 儲存空間指標(R2 原生用量)
+    (async () => {  // 儲存空間指標(R2 原生用量;上限顯示 50GB,前 10GB 免費、之後按量計費)
       try {
         const s = await apiGet({ action: 'storage' });
         if (s.error != null) throw new Error(s.error);
-        const pct = Math.min(100, s.used / s.freeTier * 100);
+        const QUOTA = 50 * 1073741824;
+        const pct = Math.min(100, s.used / QUOTA * 100);
         $('stBar').style.width = Math.max(pct, 0.5).toFixed(1) + '%';
         $('stBar').style.background = pct < 70 ? '#a6e45d' : pct < 90 ? '#e8b84a' : '#e46a5d';
-        $('stLabel').textContent = `儲存空間:已用 ${fmtSize(s.used) || '0 MB'} / 10 GB 免費額度(${pct.toFixed(1)}%|${s.count} 個檔案)`;
+        $('stLabel').textContent = `儲存空間:已用 ${fmtSize(s.used) || '0 MB'} / 50 GB(${pct.toFixed(1)}%|${s.count} 個檔案)`;
       } catch (e) { $('stLabel').textContent = '儲存空間讀取失敗'; }
     })();
     try {
@@ -343,7 +356,12 @@
       });
       $('upLabel').textContent = '收尾中…';
       await apiPost({ action: 'finishUpload', id: init.id, key: init.key, name: file.name, size: file.size });
-      location.href = `?v=${encodeURIComponent(init.id)}&n=${encodeURIComponent(file.name)}`;
+      const pageUrl = location.origin + location.pathname + `?v=${encodeURIComponent(init.id)}&n=${encodeURIComponent(file.name)}`;
+      let copied = false;
+      try { await navigator.clipboard.writeText(pageUrl); copied = true; } catch (e) {}
+      $('upLabel').textContent = '完成!';
+      toast(copied ? '✅ 上傳完成,影片網址已複製' : '✅ 上傳完成');
+      setTimeout(() => { location.href = pageUrl; }, 1400);  // 讓通知看得到再進編輯頁
     } catch (e) {
       $('upLabel').textContent = '⚠ ' + (e.message || '上傳失敗');
     }
@@ -530,7 +548,7 @@
     if (e.target.matches('input[type=text], input:not([type]), textarea')) return;
     if (!video.src || !videoId) return;
     if (e.code === 'Space') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
-    if (e.key === 'Enter' && video.paused) { e.preventDefault(); $('noteText').focus(); }
+    if (e.key === 'Enter') { e.preventDefault(); video.pause(); $('noteText').focus(); }  // 播放中按 Enter=暫停+直接輸入
     if (e.key === 'ArrowLeft')  { video.pause(); video.currentTime -= 0.5; }
     if (e.key === 'ArrowRight') { video.pause(); video.currentTime += 0.5; }
     if (e.key === ',') { video.pause(); video.currentTime -= 1 / 30; }
