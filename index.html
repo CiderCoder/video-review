@@ -351,10 +351,11 @@
     $('homeView').style.display = 'none';
     document.querySelector('main').style.display = 'flex';
     $('backBtn').hidden = false;
-    if (/^((?!chrome|crios|android|edg|fxios).)*safari/i.test(navigator.userAgent)) {
+    const isSafari = /^((?!chrome|crios|android|edg|fxios).)*safari/i.test(navigator.userAgent);
+    if (isSafari) {
       const w = document.createElement('div');
       w.id = 'safariWarn';
-      w.textContent = '⚠ Safari 對雲端影片播放支援有限,影片跑不出來的話請改用 Chrome 開同一個網址(註記功能不受影響)';
+      w.textContent = 'ℹ️ Safari 不支援雲端串流,會先下載整支影片再播放(大檔要等一下;用 Chrome 開會比較快)';
       $('stage').prepend(w);
     }
     await askName();
@@ -365,19 +366,34 @@
     $('fileName').textContent = videoName;
     document.title = videoName.replace(/\.[^.]+$/, '') + '|影片回饋';
     const mediaUrl = () => `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(videoId)}?alt=media&key=${DRIVE_KEY}`;
-    let triedCompat = false;
-    video.addEventListener('error', () => {
-      if (!triedCompat) {  // Safari 等瀏覽器對跨站影片較嚴:退一步用相容模式重載(截圖功能可能受限)
-        triedCompat = true;
-        setStatus('用相容模式重新載入影片…');
+    async function loadViaBlob() {  // Safari 不吃 Drive 的分段串流:整檔抓下來用本地 blob 播(截圖也能用)
+      try {
+        setStatus('下載影片中… 0%');
+        const resp = await fetch(mediaUrl());
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const total = +resp.headers.get('Content-Length') || 0;
+        const reader = resp.body.getReader();
+        const chunks = [];
+        let got = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          got += value.length;
+          setStatus('下載影片中… ' + (total ? Math.round(got / total * 100) + '%' : Math.round(got / 1048576) + ' MB'));
+        }
         video.removeAttribute('crossorigin');
-        video.src = mediaUrl();
+        video.src = URL.createObjectURL(new Blob(chunks, { type: 'video/mp4' }));
         video.load();
-      } else {
-        setStatus('⚠ 影片載入失敗(錯誤碼 ' + (video.error ? video.error.code : '?') + '),請截圖回報');
-      }
-    });
-    video.src = mediaUrl();
+        setStatus('影片已載入');
+      } catch (e) { setStatus('⚠ 影片載入失敗:' + (e.message || e)); }
+    }
+    if (isSafari) {
+      loadViaBlob();
+    } else {
+      video.addEventListener('error', () => { setStatus('串流失敗,改用下載模式…'); loadViaBlob(); }, { once: true });
+      video.src = mediaUrl();
+    }
     await loadNotes();
     setInterval(refreshOthers, 45000);  // 定期撿別人的新註記
   }
