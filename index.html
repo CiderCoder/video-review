@@ -18,7 +18,11 @@
   #homeView { flex: 1; overflow-y: auto; padding: 40px 20px; }
   .home-inner { max-width: 860px; margin: 0 auto; }
   .home-inner h2 { font-size: 24px; margin-bottom: 6px; }
-  .home-sub { color: #9a9aa5; font-size: 13.5px; margin-bottom: 24px; }
+  .home-sub { color: #9a9aa5; font-size: 13.5px; margin-bottom: 16px; }
+  #storageBar { margin: 0 0 20px; }
+  #stBarWrap { background: #2b2b33; border-radius: 8px; height: 12px; overflow: hidden; }
+  #stBar { background: #a6e45d; height: 100%; width: 0%; transition: width .4s; }
+  #stLabel { font-size: 12px; color: #9a9aa5; margin-top: 5px; }
   #dropzone { border: 2px dashed #444; border-radius: 14px; padding: 44px 20px; text-align: center; cursor: pointer; transition: border-color .15s; margin-bottom: 14px; }
   #dropzone:hover, #dropzone.over { border-color: #e46a5d; }
   #dropzone .big { font-size: 17px; margin-bottom: 8px; }
@@ -133,6 +137,7 @@
   <div class="home-inner">
     <h2>上傳影片開始審片</h2>
     <div class="home-sub">拖影片進來就會自動上傳,完成後直接進入編輯畫面;每支影片有自己的網址,註記自動儲存、所有人共見。</div>
+    <div id="storageBar"><div id="stBarWrap"><div id="stBar"></div></div><div id="stLabel">儲存空間計算中…</div></div>
     <div id="dropzone">
       <div class="big">⬆️ 把影片拖到這裡,或點一下選檔</div>
       <div class="small">支援 mp4 / mov,上傳到共用空間(建議 1GB 以內)</div>
@@ -227,6 +232,7 @@
   const videoId = qs.get('v');
   let videoName = qs.get('n') || '';
   let userName = localStorage.getItem('reviewerName') || '';
+  const fmtSize = b => !b ? '' : b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' GB' : (b / 1048576).toFixed(0) + ' MB';
 
   /* ══ 名字小視窗(每次進審片頁都問,常用名字做成按鈕)══ */
   const PRESET_NAMES = ['果妹', 'Joey'];
@@ -263,6 +269,16 @@
   async function renderHome() {
     document.title = '影片回饋系統';
     $('homeView').style.display = 'block';
+    (async () => {  // 儲存空間指標(R2 原生用量)
+      try {
+        const s = await apiGet({ action: 'storage' });
+        if (s.error != null) throw new Error(s.error);
+        const pct = Math.min(100, s.used / s.freeTier * 100);
+        $('stBar').style.width = Math.max(pct, 0.5).toFixed(1) + '%';
+        $('stBar').style.background = pct < 70 ? '#a6e45d' : pct < 90 ? '#e8b84a' : '#e46a5d';
+        $('stLabel').textContent = `儲存空間:已用 ${fmtSize(s.used) || '0 MB'} / 10 GB 免費額度(${pct.toFixed(1)}%|${s.count} 個檔案)`;
+      } catch (e) { $('stLabel').textContent = '儲存空間讀取失敗'; }
+    })();
     try {
       const idx = await apiGet({ action: 'list' });
       const box = $('dirList');
@@ -274,12 +290,15 @@
         d.className = 'dir-item';
         const dn = document.createElement('div'); dn.className = 'dn'; dn.textContent = '🎬 ' + v.name.replace(/\.[^.]+$/, '');
         const dm = document.createElement('div'); dm.className = 'dm';
-        dm.textContent = `${v.noteCount || 0} 條註記${v.users && v.users.length ? '|' + v.users.join('、') : ''}|${(v.updatedAt || v.uploadedAt || '').slice(0, 10)}`;
+        dm.textContent = `${fmtSize(v.size) ? fmtSize(v.size) + '|' : ''}${v.noteCount || 0} 條註記${v.users && v.users.length ? '|' + v.users.join('、') : ''}|${(v.updatedAt || v.uploadedAt || '').slice(0, 10)}`;
         const del = document.createElement('button');
         del.className = 'dirDel'; del.textContent = '🗑'; del.title = '刪除這支影片';
         del.onclick = async (e) => {
           e.stopPropagation();
-          if (!confirm(`確定刪除「${v.name}」?\n影片和所有人的註記會一起刪除(影片移到 Drive 垃圾桶,30 天內可救回)。`)) return;
+          const warn = v.key
+            ? `確定刪除「${v.name}」?\n影片和所有人的註記會一起【永久刪除,無法復原】。`
+            : `確定刪除「${v.name}」?\n影片和所有人的註記會一起刪除(影片移到 Drive 垃圾桶,30 天內可救回)。`;
+          if (!confirm(warn)) return;
           del.disabled = true; del.textContent = '…';
           try {
             const r = await apiPost({ action: 'deleteVideo', id: v.id });
@@ -309,25 +328,22 @@
     try {
       const init = await apiPost({ action: 'initUpload', name: file.name, size: file.size, mime: file.type || 'video/mp4' });
       if (!init.uploadUrl) throw new Error(init.error || 'init 失敗');
-      const CH = 8 * 1024 * 1024;
-      let offset = 0, fileMeta = null;
-      while (offset < file.size) {
-        const end = Math.min(offset + CH, file.size);
-        const resp = await fetch(init.uploadUrl, {
-          method: 'PUT',
-          headers: { 'Content-Range': `bytes ${offset}-${end - 1}/${file.size}` },
-          body: file.slice(offset, end)
-        });
-        if (resp.status !== 308 && !resp.ok) throw new Error('上傳中斷(' + resp.status + '),重整頁面再試');
-        if (resp.ok && resp.status !== 308) fileMeta = await resp.json();
-        offset = end;
-        const pct = Math.round(offset / file.size * 100);
-        $('upBar').style.width = pct + '%';
-        $('upLabel').textContent = `上傳中 ${pct}%(${(offset / 1048576).toFixed(0)} / ${(file.size / 1048576).toFixed(0)} MB)`;
-      }
+      await new Promise((resolve, reject) => {  // 瀏覽器直傳 R2(單一 PUT,XHR 才有上傳進度)
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', init.uploadUrl);
+        xhr.upload.onprogress = e => {
+          if (!e.lengthComputable) return;
+          const pct = Math.round(e.loaded / e.total * 100);
+          $('upBar').style.width = pct + '%';
+          $('upLabel').textContent = `上傳中 ${pct}%(${(e.loaded / 1048576).toFixed(0)} / ${(e.total / 1048576).toFixed(0)} MB)`;
+        };
+        xhr.onload = () => xhr.status < 300 ? resolve() : reject(new Error('上傳失敗(' + xhr.status + '),請重試'));
+        xhr.onerror = () => reject(new Error('上傳中斷(網路),請重試'));
+        xhr.send(file);
+      });
       $('upLabel').textContent = '收尾中…';
-      await apiPost({ action: 'finishUpload', id: fileMeta.id, name: file.name, size: file.size });
-      location.href = `?v=${encodeURIComponent(fileMeta.id)}&n=${encodeURIComponent(file.name)}`;
+      await apiPost({ action: 'finishUpload', id: init.id, key: init.key, name: file.name, size: file.size });
+      location.href = `?v=${encodeURIComponent(init.id)}&n=${encodeURIComponent(file.name)}`;
     } catch (e) {
       $('upLabel').textContent = '⚠ ' + (e.message || '上傳失敗');
     }
@@ -352,20 +368,22 @@
     document.querySelector('main').style.display = 'flex';
     $('backBtn').hidden = false;
     const isSafari = /^((?!chrome|crios|android|edg|fxios).)*safari/i.test(navigator.userAgent);
-    if (isSafari) {
-      const w = document.createElement('div');
-      w.id = 'safariWarn';
-      w.textContent = 'ℹ️ Safari 不支援雲端串流,會先下載整支影片再播放(大檔要等一下;用 Chrome 開會比較快)';
-      $('stage').prepend(w);
-    }
     await askName();
-    if (!videoName) {  // 網址沒帶名稱就查目錄
-      try { const idx = await apiGet({ action: 'list' }); const hit = (idx.videos || []).find(x => x.id === videoId); if (hit) videoName = hit.name; } catch (e) {}
-      videoName = videoName || '影片';
-    }
+    let entry = null;  // 從目錄解析這支影片(拿 playUrl 與名稱)
+    try { const idx = await apiGet({ action: 'list' }); entry = (idx.videos || []).find(x => x.id === videoId) || null; } catch (e) {}
+    if (!videoName) videoName = (entry && entry.name) || '影片';
     $('fileName').textContent = videoName;
     document.title = videoName.replace(/\.[^.]+$/, '') + '|影片回饋';
-    const mediaUrl = () => `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(videoId)}?alt=media&key=${DRIVE_KEY}`;
+    const isLegacyDrive = !(entry && entry.playUrl);  // 舊影片還在 Drive,新影片在 R2
+    const mediaUrl = () => isLegacyDrive
+      ? `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(videoId)}?alt=media&key=${DRIVE_KEY}`
+      : entry.playUrl;
+    if (isSafari && isLegacyDrive) {
+      const w = document.createElement('div');
+      w.id = 'safariWarn';
+      w.textContent = 'ℹ️ 這是舊影片(存 Drive),Safari 會先整支下載再播放;新上傳的影片(存 R2)Safari 可直接串流';
+      $('stage').prepend(w);
+    }
     async function loadViaBlob() {  // Safari 不吃 Drive 的分段串流:整檔抓下來用本地 blob 播(截圖也能用)
       try {
         setStatus('下載影片中… 0%');
@@ -388,8 +406,8 @@
         setStatus('影片已載入');
       } catch (e) { setStatus('⚠ 影片載入失敗:' + (e.message || e)); }
     }
-    if (isSafari) {
-      loadViaBlob();
+    if (isSafari && isLegacyDrive) {
+      loadViaBlob();  // Safari + 舊 Drive 影片:唯一能動的路
     } else {
       video.addEventListener('error', () => { setStatus('串流失敗,改用下載模式…'); loadViaBlob(); }, { once: true });
       video.src = mediaUrl();
