@@ -67,7 +67,17 @@
   #noteRow { display: flex; gap: 10px; }
   #noteText { flex: 1; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 10px; padding: 17px 16px; font-size: 15px; }
   #noteText:focus { outline: none; border-color: #e46a5d; }
+  #noteText.dragover { border-color: #e8b84a; background: #33301f; }
   #saveNote { background: #e46a5d; color: #fff; border: none; border-radius: 10px; padding: 0 28px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  #attachBtn { background: #2b2b33; color: #e8b84a; border: 1px dashed #5a5240; border-radius: 10px; padding: 0 16px; font-size: 18px; cursor: pointer; }
+  #attachBtn:hover { background: #33301f; }
+  #attachChips { display: none; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #attachChips .chip { position: relative; display: inline-block; }
+  #attachChips .chip img { height: 52px; border-radius: 6px; border: 1.5px solid #e8b84a; display: block; }
+  #attachChips .chip button { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%; border: none; background: #e46a5d; color: #fff; font-size: 11px; line-height: 1; cursor: pointer; }
+  #attachChips .hint { color: #e8b84a; font-size: 11.5px; }
+  #noteList .refs { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  #noteList .refs img { width: 40px; border: 1px solid #e8b84a; border-radius: 4px; cursor: zoom-in; }
   aside { flex: 0 0 320px; background: #1c1c22; border-left: 1px solid #2b2b33; display: flex; flex-direction: column; min-height: 0; }
   aside h3 { font-size: 13px; color: #9a9aa5; padding: 12px 14px 6px; }
   #globalNotes { margin: 0 14px; height: 84px; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 8px 10px; font-size: 13px; resize: vertical; }
@@ -192,8 +202,11 @@
         <button id="clearBtn">清除畫筆</button>
         <span class="hint">空白鍵=播放/暫停 暫停後Enter=跳到輸入欄 欄位空白按空白鍵/打字中連按兩下空白=繼續播放 ←→=0.5s ,.=逐格 | 暫停時直接畫紅筆 | 標一段:標記起點→播到結尾按標記結尾→打字送出</span>
       </div>
+      <div id="attachChips"></div>
       <div id="noteRow">
-        <input id="noteText" placeholder="這一幕要改什麼?(打完按 Enter 或「存這一幕」,會連紅筆+時間碼一起自動儲存)">
+        <button id="attachBtn" title="附上參考截圖(也可以把圖直接拖進輸入框或貼上)">📎</button>
+        <input type="file" id="attachInput" accept="image/*" multiple hidden>
+        <input id="noteText" placeholder="這一幕要改什麼?(打完按 Enter 或「存這一幕」,會連紅筆+時間碼一起自動儲存;📎/拖圖/貼圖=附參考圖)">
         <button id="saveNote">存這一幕</button>
       </div>
     </div>
@@ -528,6 +541,58 @@
   $('undoBtn').onclick = () => { strokes.pop(); redraw(); };
   $('clearBtn').onclick = () => { strokes = []; redraw(); };
 
+  /* ── 附參考圖(📎 加號/拖進輸入列/貼上)── */
+  let pendingRefs = [];
+  function addRefFiles(files) {
+    [...files].filter(f => f.type.startsWith('image')).forEach(f => {
+      const im = new Image();
+      im.onload = () => {
+        const scale = Math.min(1, 1280 / Math.max(im.width, im.height));  // 縮到 1280px 內,後端存得動
+        const c = document.createElement('canvas');
+        c.width = Math.round(im.width * scale); c.height = Math.round(im.height * scale);
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+        pendingRefs.push(c.toDataURL('image/jpeg', 0.85));
+        URL.revokeObjectURL(im.src);
+        renderChips();
+      };
+      im.src = URL.createObjectURL(f);
+    });
+  }
+  function renderChips() {
+    const box = $('attachChips');
+    box.innerHTML = '';
+    pendingRefs.forEach((d, i) => {
+      const w = document.createElement('span'); w.className = 'chip';
+      const im = document.createElement('img'); im.src = d; im.onclick = () => showLightbox(d);
+      const x = document.createElement('button'); x.textContent = '✕';
+      x.onclick = () => { pendingRefs.splice(i, 1); renderChips(); };
+      w.append(im, x); box.append(w);
+    });
+    if (pendingRefs.length) {
+      const h = document.createElement('span'); h.className = 'hint';
+      h.textContent = '參考圖會跟下一條註記一起存';
+      box.append(h);
+    }
+    box.style.display = pendingRefs.length ? 'flex' : 'none';
+  }
+  function showLightbox(src) {
+    const o = document.createElement('div');
+    o.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99;display:flex;align-items:center;justify-content:center;cursor:zoom-out';
+    const im = document.createElement('img'); im.src = src;
+    im.style.cssText = 'max-width:92vw;max-height:92vh;border-radius:8px';
+    o.append(im); o.onclick = () => o.remove();
+    document.body.append(o);
+  }
+  $('attachBtn').onclick = () => $('attachInput').click();
+  $('attachInput').onchange = e => { addRefFiles(e.target.files); e.target.value = ''; };
+  $('noteRow').addEventListener('dragover', e => { e.preventDefault(); $('noteText').classList.add('dragover'); });
+  $('noteRow').addEventListener('dragleave', () => $('noteText').classList.remove('dragover'));
+  $('noteRow').addEventListener('drop', e => { e.preventDefault(); $('noteText').classList.remove('dragover'); addRefFiles(e.dataTransfer.files); });
+  $('noteText').addEventListener('paste', e => {
+    const imgs = [...(e.clipboardData && e.clipboardData.items || [])].filter(i => i.type.startsWith('image')).map(i => i.getAsFile()).filter(Boolean);
+    if (imgs.length) { e.preventDefault(); addRefFiles(imgs); }
+  });
+
   /* ── 區間標記 ── */
   let rangeStart = null, rangeEnd = null;
   function updateRangeBtn() {
@@ -593,7 +658,7 @@
   function saveNoteFn() {
     if (!video.src) return;
     const text = $('noteText').value.trim();
-    if (!text && !strokes.length) return;
+    if (!text && !strokes.length && !pendingRefs.length) return;
     video.pause();
     let t = video.currentTime, t2 = null;
     if (rangeStart !== null) {
@@ -604,7 +669,8 @@
       rangeStart = rangeEnd = null;
       updateRangeBtn();
     }
-    notes.push({ t, t2, text, img: captureFrame(), hasInk: strokes.length > 0 });
+    notes.push({ t, t2, text, img: captureFrame(), hasInk: strokes.length > 0, refs: pendingRefs.slice() });
+    pendingRefs = []; renderChips();
     notes.sort((a, b) => a.t - b.t);
     $('noteText').value = '';
     strokes = []; redraw();
@@ -648,7 +714,13 @@
       if (who) { const by = document.createElement('span'); by.className = 'by'; by.textContent = who; tc.append(by); }
       const tx = document.createElement('div'); tx.className = 'txt'; tx.textContent = n.text || '(只有畫圖)';
       tc.onclick = () => { video.currentTime = n.t; video.pause(); };
-      meta.append(tc, tx); li.append(meta);
+      meta.append(tc, tx);
+      if (n.refs && n.refs.length) {  // 附的參考圖(點了放大)
+        const rb = document.createElement('div'); rb.className = 'refs';
+        n.refs.forEach(dd => { const r = document.createElement('img'); r.src = dd; r.onclick = () => showLightbox(dd); rb.append(r); });
+        meta.append(rb);
+      }
+      li.append(meta);
       if (item.own) {
         const del = document.createElement('button'); del.className = 'del'; del.textContent = '✕';
         del.onclick = () => { notes.splice(notes.indexOf(n), 1); renderList(); saveSoon(); };
@@ -669,7 +741,8 @@
       const n = it.n;
       const who = it.own ? userName : n.user;
       const by = who ? `&nbsp;<span style="color:#888;font-size:12px">${esc(who)}</span>` : '';
-      h += `<div class="pr-note">${n.img ? `<img src="${n.img}">` : ''}<div class="pr-body"><div class="pr-tc">#${i + 1}&nbsp;&nbsp;⏱ ${fmt(n.t)}${n.t2 != null ? ' → ' + fmt(n.t2) : ''}${by}</div><div class="pr-txt">${esc(n.text || '(見圖上紅筆圈選處)')}</div></div></div>`;
+      const refs = (n.refs || []).map(dd => `<img src="${dd}" style="height:30mm;width:auto;object-fit:contain;border:1.5px solid #e8b84a;border-radius:4px;margin:2mm 2mm 0 0">`).join('');
+      h += `<div class="pr-note">${n.img ? `<img src="${n.img}">` : ''}<div class="pr-body"><div class="pr-tc">#${i + 1}&nbsp;&nbsp;⏱ ${fmt(n.t)}${n.t2 != null ? ' → ' + fmt(n.t2) : ''}${by}</div><div class="pr-txt">${esc(n.text || '(見圖上紅筆圈選處)')}</div>${refs ? '<div style="font-size:11px;color:#888;margin-top:2mm">附參考圖:</div>' + refs : ''}</div></div>`;
     });
     h += '</div>';
     return h;
@@ -704,6 +777,12 @@
         const imgName = `回饋_${stem}_${String(i + 1).padStart(2, '0')}_${fmt(n.t).replace(':', 'm').replace('.', '-')}s.jpg`;
         imgPart = `(圖:${imgName})`;
         dl(imgName, n.img);
+        await new Promise(r => setTimeout(r, 350));
+      }
+      for (let k = 0; k < (n.refs || []).length; k++) {
+        const refName = `回饋_${stem}_${String(i + 1).padStart(2, '0')}_附圖${k + 1}.jpg`;
+        imgPart += `(附參考圖:${refName})`;
+        dl(refName, n.refs[k]);
         await new Promise(r => setTimeout(r, 350));
       }
       md += `${i + 1}. [${fmt(n.t)}${n.t2 != null ? '→' + fmt(n.t2) : ''}] ${by}${n.text || '(見圖上紅筆)'}${imgPart}\n`;
