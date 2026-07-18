@@ -237,17 +237,20 @@
   /* ══ 設定(部署後填入)══ */
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbx1k11D5coWNMPAoY9h7Y5QhUF1nFNmhwlp7zk0LuAJRsAlMaYjnSXktaWkH2Mao7k/exec';
   const DRIVE_KEY = 'AIzaSyC31MPtDi5mwkqu7ZJWLqyjlBHpjO9J7kE';
+  const API_TOKEN = '92bdc9335584edfa68959e9011f775babca4b60044c576f4';  // 後端共用密鑰(擋隨機掃描;要換時後端 Script Properties 同步改)
 
   const $ = id => document.getElementById(id);
   const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
-  const esc = s => String(s).replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  // 只接受合法 data:image dataURL(後端存的註記圖可能被竄改,插進 innerHTML 前必過這關)
+  const safeImg = d => (typeof d === 'string' && /^data:image\/[a-z+.-]+;base64,[A-Za-z0-9+/=]+$/i.test(d)) ? d : '';
 
   async function apiGet(params) {
-    const r = await fetch(GAS_URL + '?' + new URLSearchParams(params));
+    const r = await fetch(GAS_URL + '?' + new URLSearchParams({ ...params, token: API_TOKEN }));
     return r.json();
   }
   async function apiPost(obj) {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(obj) });  // text/plain,免預檢
+    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ ...obj, token: API_TOKEN }) });  // text/plain,免預檢
     return r.json();
   }
 
@@ -707,7 +710,8 @@
     combined().forEach(item => {
       const n = item.n;
       const li = document.createElement('li');
-      if (n.img) { const im = document.createElement('img'); im.src = n.img; im.onclick = () => { video.currentTime = n.t; video.pause(); }; li.append(im); }
+      const listImg = safeImg(n.img);
+      if (listImg) { const im = document.createElement('img'); im.src = listImg; im.onclick = () => { video.currentTime = n.t; video.pause(); }; li.append(im); }
       const meta = document.createElement('div'); meta.className = 'meta';
       const tc = document.createElement('div'); tc.className = 'tc'; tc.textContent = '⏱ ' + fmt(n.t) + (n.t2 != null ? ' → ' + fmt(n.t2) : '');
       const who = item.own ? userName : n.user;
@@ -717,7 +721,7 @@
       meta.append(tc, tx);
       if (n.refs && n.refs.length) {  // 附的參考圖(點了放大)
         const rb = document.createElement('div'); rb.className = 'refs';
-        n.refs.forEach(dd => { const r = document.createElement('img'); r.src = dd; r.onclick = () => showLightbox(dd); rb.append(r); });
+        n.refs.map(safeImg).filter(Boolean).forEach(dd => { const r = document.createElement('img'); r.src = dd; r.onclick = () => showLightbox(dd); rb.append(r); });
         meta.append(rb);
       }
       li.append(meta);
@@ -741,8 +745,9 @@
       const n = it.n;
       const who = it.own ? userName : n.user;
       const by = who ? `&nbsp;<span style="color:#888;font-size:12px">${esc(who)}</span>` : '';
-      const refs = (n.refs || []).map(dd => `<img src="${dd}" style="height:30mm;width:auto;object-fit:contain;border:1.5px solid #e8b84a;border-radius:4px;margin:2mm 2mm 0 0">`).join('');
-      h += `<div class="pr-note">${n.img ? `<img src="${n.img}">` : ''}<div class="pr-body"><div class="pr-tc">#${i + 1}&nbsp;&nbsp;⏱ ${fmt(n.t)}${n.t2 != null ? ' → ' + fmt(n.t2) : ''}${by}</div><div class="pr-txt">${esc(n.text || '(見圖上紅筆圈選處)')}</div>${refs ? '<div style="font-size:11px;color:#888;margin-top:2mm">附參考圖:</div>' + refs : ''}</div></div>`;
+      const mainImg = safeImg(n.img);
+      const refs = (n.refs || []).map(safeImg).filter(Boolean).map(dd => `<img src="${dd}" style="height:30mm;width:auto;object-fit:contain;border:1.5px solid #e8b84a;border-radius:4px;margin:2mm 2mm 0 0">`).join('');
+      h += `<div class="pr-note">${mainImg ? `<img src="${mainImg}">` : ''}<div class="pr-body"><div class="pr-tc">#${i + 1}&nbsp;&nbsp;⏱ ${fmt(n.t)}${n.t2 != null ? ' → ' + fmt(n.t2) : ''}${by}</div><div class="pr-txt">${esc(n.text || '(見圖上紅筆圈選處)')}</div>${refs ? '<div style="font-size:11px;color:#888;margin-top:2mm">附參考圖:</div>' + refs : ''}</div></div>`;
     });
     h += '</div>';
     return h;
@@ -773,16 +778,18 @@
       const who = list[i].own ? userName : n.user;
       const by = who ? `【${who}】` : '';
       let imgPart = '(無圖)';
-      if (n.img) {
+      const mdImg = safeImg(n.img);
+      if (mdImg) {
         const imgName = `回饋_${stem}_${String(i + 1).padStart(2, '0')}_${fmt(n.t).replace(':', 'm').replace('.', '-')}s.jpg`;
         imgPart = `(圖:${imgName})`;
-        dl(imgName, n.img);
+        dl(imgName, mdImg);
         await new Promise(r => setTimeout(r, 350));
       }
-      for (let k = 0; k < (n.refs || []).length; k++) {
+      const mdRefs = (n.refs || []).map(safeImg).filter(Boolean);
+      for (let k = 0; k < mdRefs.length; k++) {
         const refName = `回饋_${stem}_${String(i + 1).padStart(2, '0')}_附圖${k + 1}.jpg`;
         imgPart += `(附參考圖:${refName})`;
-        dl(refName, n.refs[k]);
+        dl(refName, mdRefs[k]);
         await new Promise(r => setTimeout(r, 350));
       }
       md += `${i + 1}. [${fmt(n.t)}${n.t2 != null ? '→' + fmt(n.t2) : ''}] ${by}${n.text || '(見圖上紅筆)'}${imgPart}\n`;
