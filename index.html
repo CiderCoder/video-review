@@ -334,11 +334,17 @@
             ? `確定刪除「${v.name}」?\n影片和所有人的註記會一起【永久刪除,無法復原】。`
             : `確定刪除「${v.name}」?\n影片和所有人的註記會一起刪除(影片移到 Drive 垃圾桶,30 天內可救回)。`;
           if (!confirm(warn)) return;
+          let pin = sessionStorage.getItem('deletePin') || '';  // 刪除密碼:後端驗證,輸對一次當次免重輸
+          if (!pin) {
+            pin = (prompt('輸入刪除密碼(跟蘋果妹拿):') || '').trim();
+            if (!pin) return;
+          }
           del.disabled = true; del.textContent = '…';
           try {
-            const r = await apiPost({ action: 'deleteVideo', id: v.id });
-            if (r.ok) { renderHome(); return; }
-            alert('刪除失敗:' + (r.error || '未知錯誤'));
+            const r = await apiPost({ action: 'deleteVideo', id: v.id, deleteKey: pin });
+            if (r.ok) { sessionStorage.setItem('deletePin', pin); renderHome(); return; }
+            if (r.error === 'wrong delete password') { sessionStorage.removeItem('deletePin'); alert('刪除密碼錯誤'); }
+            else alert('刪除失敗:' + (r.error || '未知錯誤'));
           } catch (err) { alert('刪除失敗(網路)'); }
           del.disabled = false; del.textContent = '🗑';
         };
