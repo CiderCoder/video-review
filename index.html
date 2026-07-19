@@ -103,7 +103,30 @@
     aside { flex: 0 0 auto; border-left: none; border-top: 1px solid #2b2b33; }
     #noteList { max-height: 44vh; }
     #btnRow .hint { display: none; }
-    #noteText, #globalNotes, #nameInput { font-size: 16px; }  /* 防 iOS 聚焦自動放大 */
+    #noteText, #globalNotes { font-size: 16px; }  /* 防 iOS 聚焦自動放大 */
+  }
+
+  /* ── 手機(窄螢幕)細調 ── */
+  @media (max-width: 640px) {
+    header { padding: 8px 10px; gap: 8px; }
+    header h1 { font-size: 14px; white-space: nowrap; }
+    header #fileName { font-size: 11.5px; }
+    #shareStatus { font-size: 10.5px; max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hdrBtn { padding: 6px 9px; font-size: 12px; white-space: nowrap; }
+    #homeView { padding: 20px 14px; }
+    #dropzone { padding: 30px 14px; }
+    #stage { padding: 8px 8px 20px; }
+    video { max-width: calc(100vw - 16px); max-height: 42vh; }
+    #btnRow { gap: 5px; }
+    #btnRow button { padding: 11px 13px; font-size: 14px; }
+    #playBtn { flex: 1 1 100%; padding: 12px; font-size: 15px; }
+    #btnRow .sep { display: none; }
+    #seek { height: 32px; }
+    #timeLabel { min-width: 96px; font-size: 12px; }
+    #noteText { padding: 13px 12px; }
+    #saveNote { white-space: nowrap; padding: 0 16px; }
+    #attachBtn { padding: 0 13px; }
+    #globalNotes { height: 68px; }
   }
 
   /* ── 浮動通知(自動出現+消失)── */
@@ -116,12 +139,11 @@
   #nameBox { background: #24242c; border-radius: 14px; padding: 28px 30px; width: min(360px, 90vw); text-align: center; }
   #nameBox h2 { font-size: 17px; margin-bottom: 6px; }
   #nameBox p { color: #9a9aa5; font-size: 12.5px; margin-bottom: 16px; }
-  #namePresets { display: flex; gap: 10px; margin-bottom: 14px; }
-  .namePreset { flex: 1; padding: 16px 8px; background: #e8b84a; color: #16161a; border: none; border-radius: 10px; font-size: 17px; font-weight: 700; cursor: pointer; }
+  #namePresets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .namePreset { padding: 18px 8px; background: #e8b84a; color: #16161a; border: none; border-radius: 10px; font-size: 17px; font-weight: 700; cursor: pointer; }
   .namePreset:hover { background: #f0c65e; }
-  #nameInput { width: 100%; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 12px 14px; font-size: 15px; text-align: center; }
-  #nameInput:focus { outline: none; border-color: #e46a5d; }
-  #nameOk { margin-top: 14px; width: 100%; padding: 12px; background: #e46a5d; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; }
+  .namePreset:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .namePreset.current { outline: 2.5px solid #e46a5d; outline-offset: 2px; }
 
   /* ── PDF 報告(列印時才出現)── */
   #printReport { display: none; }
@@ -225,10 +247,8 @@
 <div id="nameModal" hidden>
   <div id="nameBox">
     <h2>你是誰?</h2>
-    <p>你的註記會標這個名字</p>
+    <p>點名字直接開始,你的註記會標這個名字</p>
     <div id="namePresets"></div>
-    <input id="nameInput" placeholder="或輸入其他名字">
-    <button id="nameOk">開始標記</button>
   </div>
 </div>
 
@@ -268,34 +288,25 @@
     t._timer = setTimeout(() => t.classList.remove('show'), ms || 2500);
   }
 
-  /* ══ 名字小視窗(每次進審片頁都問,常用名字做成按鈕)══ */
-  const PRESET_NAMES = ['果妹', 'Joey', 'Boog'];
+  /* ══ 名字小視窗(每次進審片頁都問;固定五人,點名字直接開始)══ */
+  const PRESET_NAMES = ['果妹', 'Joey', 'Boog', 'Alan', '果爹'];
   function askName() {
     return new Promise(res => {
       $('nameModal').hidden = false;
-      const pick = v => {
-        userName = v;
-        localStorage.setItem('reviewerName', v);
-        $('nameModal').hidden = true;
-        res(v);
-      };
       const box = $('namePresets');
       box.innerHTML = '';
       PRESET_NAMES.forEach(nm => {
         const b = document.createElement('button');
-        b.className = 'namePreset';
+        b.className = 'namePreset' + (nm === userName ? ' current' : '');  // 上次選的名字框起來
         b.textContent = nm;
-        b.onclick = () => pick(nm);
+        b.onclick = () => {
+          userName = nm;
+          localStorage.setItem('reviewerName', nm);
+          $('nameModal').hidden = true;
+          res(nm);
+        };
         box.append(b);
       });
-      $('nameInput').value = (userName && !PRESET_NAMES.includes(userName)) ? userName : '';
-      const ok = () => {
-        const v = $('nameInput').value.trim();
-        if (!v) return;
-        pick(v);
-      };
-      $('nameOk').onclick = ok;
-      $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) ok(); });
     });
   }
 
@@ -416,6 +427,8 @@
     $('videoLoading').hidden = false;
     $('noteList').innerHTML = '<li class="noteLoading">註記載入中…</li>';
     const isSafari = /^((?!chrome|crios|android|edg|fxios).)*safari/i.test(navigator.userAgent);
+    // iOS 上所有瀏覽器都是 WebKit,影片元件走 AVFoundation:跨站 crossorigin 串流會直接 error
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     await askName();
     let entry = null;  // 從目錄解析這支影片(拿 playUrl 與名稱)
     try { const idx = await apiGet({ action: 'list' }); entry = (idx.videos || []).find(x => x.id === videoId) || null; } catch (e) {}
@@ -432,7 +445,7 @@
       w.textContent = 'ℹ️ 這是舊影片(存 Drive),Safari 會先整支下載再播放;新上傳的影片(存 R2)Safari 可直接串流';
       $('stage').prepend(w);
     }
-    async function loadViaBlob() {  // Safari 不吃 Drive 的分段串流:整檔抓下來用本地 blob 播(截圖也能用)
+    async function loadViaBlob() {  // 整檔抓下來用本地 blob 播(繞過影片元件的跨站串流限制,截圖也能用)
       try {
         $('videoLoading').hidden = false;
         setStatus('下載影片中… 0%');
@@ -452,17 +465,23 @@
           $('videoLoadingText').textContent = p;
         }
         video.removeAttribute('crossorigin');
+        // iOS 對 blob 影片不見得會發 loadeddata:先強制 seek 逼它畫出第一格
+        video.addEventListener('loadedmetadata', () => { try { video.currentTime = 0.01; } catch (e) {} }, { once: true });
         video.src = URL.createObjectURL(new Blob(chunks, { type: 'video/mp4' }));
         video.load();
+        $('videoLoadingText').textContent = '處理中…';
         setStatus('影片已載入');
+        setTimeout(() => { $('videoLoading').hidden = true; }, 4000);  // 保險絲:事件都沒來也要收掉載入畫面
       } catch (e) {
         $('videoLoading').hidden = true;
         setStatus('⚠ 影片載入失敗:' + (e.message || e));
       }
     }
-    if (isSafari && isLegacyDrive) {
-      loadViaBlob();  // Safari + 舊 Drive 影片:唯一能動的路
+    const smallEnough = !entry || !entry.size || entry.size <= 200 * 1048576;
+    if ((isIOS && smallEnough) || (isSafari && isLegacyDrive)) {
+      loadViaBlob();  // iOS 小檔(≤200MB)與 Safari+舊 Drive 影片:整檔下載最穩,截圖功能也保得住
     } else {
+      if (isIOS) video.removeAttribute('crossorigin');  // iOS 大檔:改無 crossorigin 串流(截圖會失效但播得動)
       video.addEventListener('error', () => { setStatus('串流失敗,改用下載模式…'); loadViaBlob(); }, { once: true });
       video.src = mediaUrl();
     }
@@ -518,7 +537,8 @@
     ink.style.height = r.height + 'px';
     redraw();
   }
-  video.addEventListener('loadedmetadata', () => { fitCanvas(); $('timeLabel').textContent = `${fmt(0)} / ${fmt(video.duration)}`; });
+  // 收載入畫面用 loadedmetadata:iOS 常不發 loadeddata(害過手機永遠卡「下載影片中…100%」)
+  video.addEventListener('loadedmetadata', () => { fitCanvas(); $('videoLoading').hidden = true; $('timeLabel').textContent = `${fmt(0)} / ${fmt(video.duration)}`; });
   video.addEventListener('loadeddata', () => { $('videoLoading').hidden = true; });
   new ResizeObserver(fitCanvas).observe(video);
   function redraw() {
