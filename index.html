@@ -64,6 +64,7 @@
   #btnRow button.armed { background: #e8b84a; color: #16161a; font-weight: 700; }
   #btnRow .sep { width: 1px; height: 22px; background: #3a3a44; margin: 0 4px; }
   #btnRow .hint { color: #777; font-size: 11.5px; margin-left: auto; }
+  .fieldLabel { display: none; font-size: 12.5px; color: #e46a5d; font-weight: 700; }
   #noteRow { display: flex; gap: 10px; }
   #noteText { flex: 1; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 10px; padding: 17px 16px; font-size: 15px; }
   #noteText:focus { outline: none; border-color: #e46a5d; }
@@ -115,18 +116,35 @@
     .hdrBtn { padding: 6px 9px; font-size: 12px; white-space: nowrap; }
     #homeView { padding: 20px 14px; }
     #dropzone { padding: 30px 14px; }
-    #stage { padding: 8px 8px 20px; }
-    video { max-width: calc(100vw - 16px); max-height: 42vh; }
-    #btnRow { gap: 5px; }
-    #btnRow button { padding: 11px 13px; font-size: 14px; }
-    #playBtn { flex: 1 1 100%; padding: 12px; font-size: 15px; }
-    #btnRow .sep { display: none; }
+    #stage { padding: 8px 8px 20px; gap: 8px; }
+    video { max-width: calc(100vw - 16px); max-height: 56vh; }
+    /* 按鈕改 4 欄網格,大小一致才不亂 */
+    #btnRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    #btnRow button { padding: 12px 2px; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #playBtn { grid-column: 1 / -1; padding: 13px; font-size: 16px; }
+    /* 重排分組:跳秒一排/速度+上一筆一排/標記起點+清除畫筆一排 */
+    #btnRow [data-skip] { order: 1; }
+    #btnRow [data-rate] { order: 2; }
+    #undoBtn { order: 3; }
+    #rangeBtn { order: 4; grid-column: span 2; }
+    #clearBtn { order: 5; grid-column: span 2; }
+    #btnRow .sep, #btnRow .hint { display: none; }
     #seek { height: 32px; }
     #timeLabel { min-width: 96px; font-size: 12px; }
-    #noteText { padding: 13px 12px; }
+    /* 逐幕輸入欄=主角:紅框+標籤 */
+    .fieldLabel { display: block; }
+    #noteText { padding: 14px 12px; border: 2px solid #e46a5d; }
     #saveNote { white-space: nowrap; padding: 0 16px; }
     #attachBtn { padding: 0 13px; }
-    #globalNotes { height: 68px; }
+    /* 整體指示搬到註記清單下面+弱化,跟逐幕輸入欄離遠一點才不會填錯 */
+    aside h3.nTitle { order: 1; }
+    #noteList { order: 2; }
+    aside h3.gTitle { order: 3; color: #6f6f78; }
+    #globalNotes { order: 4; height: 44px; border-style: dashed; }
+    #globalNotes:focus { height: 84px; }
+    #pdfBtn { order: 5; }
+    #exportBtn { order: 6; }
+    #exportMsg { order: 7; }
   }
 
   /* ── 浮動通知(自動出現+消失)── */
@@ -225,6 +243,7 @@
         <span class="hint">空白鍵=播放/暫停 暫停後Enter=跳到輸入欄 欄位空白按空白鍵/打字中連按兩下空白=繼續播放 ←→=0.5s ,.=逐格 | 暫停時直接畫紅筆 | 標一段:標記起點→播到結尾按標記結尾→打字送出</span>
       </div>
       <div id="attachChips"></div>
+      <div class="fieldLabel">✍️ 逐幕註記打這裡(存檔自動綁這一幕的畫面+時間碼)</div>
       <div id="noteRow">
         <button id="attachBtn" title="附上參考截圖(也可以把圖直接拖進輸入框或貼上)">📎</button>
         <input type="file" id="attachInput" accept="image/*" multiple hidden>
@@ -234,9 +253,9 @@
     </div>
   </section>
   <aside>
-    <h3>整體指示(標題/音樂/風格這種不綁定畫面的)</h3>
+    <h3 class="gTitle">整體指示(標題/音樂/風格這種不綁定畫面的)</h3>
     <textarea id="globalNotes" placeholder="例:標題改 iOS27照片新功能,這次不用小標;音樂放 newjeans y2k 感"></textarea>
-    <h3>逐幕註記(自動儲存,點時間碼可跳回該幕)</h3>
+    <h3 class="nTitle">逐幕註記(自動儲存,點時間碼可跳回該幕)</h3>
     <ol id="noteList"></ol>
     <button id="pdfBtn">📄 輸出 PDF(給人看的圖文對照)</button>
     <button id="exportBtn">📤 輸出給 Claude(md+圖,到「下載」)</button>
@@ -419,6 +438,10 @@
     return arr;
   }
   const setStatus = s => { $('shareStatus').textContent = s; };
+  if (matchMedia('(max-width: 640px)').matches) {  // 手機:placeholder 縮短,長句會被截斷反而看不懂
+    $('noteText').placeholder = '這一幕要改什麼?';
+    $('globalNotes').placeholder = '例:標題改XX;音樂換Y2K感';
+  }
 
   async function openEditor() {
     $('homeView').style.display = 'none';
