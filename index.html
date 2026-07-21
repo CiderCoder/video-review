@@ -96,21 +96,29 @@
   #noteList .txt { font-size: 12.5px; color: #ddd; margin-top: 3px; word-break: break-word; white-space: pre-wrap; }
   #noteList .del { background: none; border: none; color: #666; cursor: pointer; font-size: 14px; align-self: flex-start; }
   #noteList .del:hover { color: #e46a5d; }
-  /* 回覆串:深一階的底色+↪ 箭頭,跟主註記做出區隔 */
-  #noteList .replies { display: flex; flex-direction: column; gap: 4px; margin-top: 9px; }
-  #noteList .reply { background: #1c1c23; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #c9c9d2; line-height: 1.5; display: flex; gap: 7px; align-items: baseline; }
-  #noteList .reply .arw { color: #5c5c66; font-size: 11px; flex: 0 0 auto; }
-  #noteList .reply .ru { color: #e8b84a; font-size: 11px; font-weight: 700; flex: 0 0 auto; }
-  #noteList .reply .rt { min-width: 0; word-break: break-word; white-space: pre-wrap; }
-  #noteList .reply .rx { background: none; border: none; color: #555; cursor: pointer; font-size: 12px; margin-left: auto; flex: 0 0 auto; padding: 0 2px; }
-  #noteList .reply .rx:hover { color: #e46a5d; }
-  #noteList .replyBox { display: flex; gap: 6px; margin-top: 9px; }
-  #noteList .replyBox input { flex: 1; min-width: 0; background: #1d1d24; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
-  #noteList .replyBox input:focus { outline: none; border-color: #e46a5d; }
-  #noteList .replyBox button { background: #e46a5d; color: #fff; border: none; border-radius: 8px; padding: 0 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-  #noteList .replyBox button:disabled { opacity: .5; }
+  /* 回覆串:深一階的底色+↪ 箭頭,跟主內容做出區隔(逐幕註記與整體指示卡共用) */
+  .replies { display: flex; flex-direction: column; gap: 4px; margin-top: 9px; }
+  .reply { background: #1c1c23; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #c9c9d2; line-height: 1.5; display: flex; gap: 7px; align-items: baseline; }
+  .reply .arw { color: #5c5c66; font-size: 11px; flex: 0 0 auto; }
+  .reply .ru { color: #e8b84a; font-size: 11px; font-weight: 700; flex: 0 0 auto; }
+  .reply .rt { min-width: 0; word-break: break-word; white-space: pre-wrap; }
+  .reply .rx { background: none; border: none; color: #555; cursor: pointer; font-size: 12px; margin-left: auto; flex: 0 0 auto; padding: 0 2px; }
+  .reply .rx:hover { color: #e46a5d; }
+  .replyBox { display: flex; gap: 6px; margin-top: 9px; }
+  .replyBox input { flex: 1; min-width: 0; background: #1d1d24; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; }
+  .replyBox input:focus { outline: none; border-color: #e46a5d; }
+  .replyBox button { background: #e46a5d; color: #fff; border: none; border-radius: 8px; padding: 0 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+  .replyBox button:disabled { opacity: .5; }
   /* 卡片底部動作列:與內容一體(無分隔線),回覆=低調文字鈕、狀態=發光圓點膠囊(和左色條同色) */
-  #noteList .nFoot { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 9px; }
+  .nFoot { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 9px; }
+  /* 其他人的整體指示卡:同逐幕卡設計,無縮圖/時間碼 */
+  #globalShared { display: flex; flex-direction: column; gap: 8px; margin: 8px 14px 0; }
+  #globalShared:empty { display: none; }
+  #globalShared .gCard { background: #24242c; border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; border-left: 3px solid rgba(224,82,82,.26); }
+  #globalShared .gCard.done { border-left-color: rgba(88,196,114,.42); }
+  #globalShared .gCard.done .gTxt { opacity: .6; }
+  #globalShared .gUser { color: #e8b84a; font-size: 11px; font-weight: 700; margin-bottom: 3px; }
+  #globalShared .gTxt { font-size: 12.5px; color: #ddd; white-space: pre-wrap; word-break: break-word; transition: opacity .2s; }
   .replyBtn { background: none; border: none; color: #74747e; border-radius: 7px; padding: 5px 10px; font-size: 11.5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
   .replyBtn:hover { background: rgba(255,255,255,.07); color: #d8d8de; }
   .stChip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.05); border: none; color: #9a9aa5; border-radius: 999px; padding: 5px 12px; font-size: 11.5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
@@ -170,6 +178,7 @@
     aside h3.gTitle { order: 3; color: #6f6f78; }
     #globalNotes { order: 4; height: 44px; border-style: dashed; }
     #globalNotes:focus { height: 84px; }
+    #globalShared { order: 4; }
     #exportRow { order: 5; }
     /* 手機:回覆/狀態鈕加大點按範圍 */
     .replyBtn { padding: 8px 13px; font-size: 12.5px; }
@@ -284,6 +293,7 @@
   <aside>
     <h3 class="gTitle">整體指示(標題/音樂/風格這種不綁定畫面的)</h3>
     <textarea id="globalNotes" placeholder="例:標題改 iOS27照片新功能,這次不用小標;音樂放 newjeans y2k 感"></textarea>
+    <div id="globalShared"></div>
     <h3 class="nTitle">逐幕註記(自動儲存,點時間碼可跳回該幕)</h3>
     <ol id="noteList"></ol>
     <div id="exportRow">
@@ -866,61 +876,84 @@
         mainRow.append(del);
       }
       li.append(mainRow);
-      const reps = meta.replies[key] || [];
-      if (reps.length) {
-        const box = document.createElement('div'); box.className = 'replies';
-        reps.forEach(r => {
-          const row = document.createElement('div'); row.className = 'reply';
-          const arw = document.createElement('span'); arw.className = 'arw'; arw.textContent = '↪';
-          const ru = document.createElement('span'); ru.className = 'ru'; ru.textContent = r.user;
-          const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = r.text;
-          row.append(arw, ru, rt);
-          if (r.user === userName) {  // 只能刪自己的回覆
-            const rx = document.createElement('button'); rx.className = 'rx'; rx.textContent = '✕';
-            rx.onclick = async () => {
-              meta.replies[key] = reps.filter(x => x !== r);
-              if (!meta.replies[key].length) delete meta.replies[key];
-              renderList();
-              if (r.pending) { r.cancelled = true; return; }  // 後端還在存:標記取消,存好後自動補刪
-              try { await apiPost({ action: 'deleteReply', v: videoId, key, user: userName, at: r.at }); } catch (e) {}
-            };
-            row.append(rx);
-          }
-          box.append(row);
-        });
-        li.append(box);
-      }
-      if (openReplyKey === key) li.append(buildReplyBox(key));
-      const foot = document.createElement('div'); foot.className = 'nFoot';
-      const replyBtn = document.createElement('button'); replyBtn.className = 'replyBtn'; replyBtn.textContent = '回覆';
-      replyBtn.onclick = () => {
-        openReplyKey = openReplyKey === key ? null : key;
-        replyDraft = '';
-        renderList();
-        const inp = ol.querySelector('.replyBox input');
-        if (inp) inp.focus();
-      };
-      const stBtn = document.createElement('button');
-      stBtn.className = 'stChip' + (st && st.done ? ' on' : '');
-      stBtn.innerHTML = '<span class="dot"></span>' + (st && st.done ? '已修改' : '未修改');
-      if (st && st.done && st.by) stBtn.title = st.by + ' 標記已修改';
-      stBtn.onclick = async () => {
-        const done = !(st && st.done);
-        if (done) meta.status[key] = { done: true, by: userName };  // 先畫上去,存失敗再退回
-        else delete meta.status[key];
-        renderList();
-        try {
-          const r = await apiPost({ action: 'setStatus', v: videoId, key, done, user: userName });
-          if (!r.ok) throw new Error(r.error);
-        } catch (e) {
-          if (done) delete meta.status[key]; else meta.status[key] = st;
-          renderList();
-          toast('⚠ 狀態沒存成功,請重試');
-        }
-      };
-      foot.append(replyBtn, stBtn);
-      li.append(foot);
+      appendMetaUI(li, key);
       ol.append(li);
+    });
+    renderGlobals();
+  }
+  /* 回覆串+動作列(回覆/狀態):逐幕註記卡與整體指示卡共用 */
+  function appendMetaUI(card, key) {
+    const st = meta.status[key];
+    const reps = meta.replies[key] || [];
+    if (reps.length) {
+      const box = document.createElement('div'); box.className = 'replies';
+      reps.forEach(r => {
+        const row = document.createElement('div'); row.className = 'reply';
+        const arw = document.createElement('span'); arw.className = 'arw'; arw.textContent = '↪';
+        const ru = document.createElement('span'); ru.className = 'ru'; ru.textContent = r.user;
+        const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = r.text;
+        row.append(arw, ru, rt);
+        if (r.user === userName) {  // 只能刪自己的回覆
+          const rx = document.createElement('button'); rx.className = 'rx'; rx.textContent = '✕';
+          rx.onclick = async () => {
+            meta.replies[key] = reps.filter(x => x !== r);
+            if (!meta.replies[key].length) delete meta.replies[key];
+            renderList();
+            if (r.pending) { r.cancelled = true; return; }  // 後端還在存:標記取消,存好後自動補刪
+            try { await apiPost({ action: 'deleteReply', v: videoId, key, user: userName, at: r.at }); } catch (e) {}
+          };
+          row.append(rx);
+        }
+        box.append(row);
+      });
+      card.append(box);
+    }
+    if (openReplyKey === key) card.append(buildReplyBox(key));
+    const foot = document.createElement('div'); foot.className = 'nFoot';
+    const replyBtn = document.createElement('button'); replyBtn.className = 'replyBtn'; replyBtn.textContent = '回覆';
+    replyBtn.onclick = () => {
+      openReplyKey = openReplyKey === key ? null : key;
+      replyDraft = '';
+      renderList();
+      const inp = document.querySelector('.replyBox input');
+      if (inp) inp.focus();
+    };
+    const stBtn = document.createElement('button');
+    stBtn.className = 'stChip' + (st && st.done ? ' on' : '');
+    stBtn.innerHTML = '<span class="dot"></span>' + (st && st.done ? '已修改' : '未修改');
+    if (st && st.done && st.by) stBtn.title = st.by + ' 標記已修改';
+    stBtn.onclick = async () => {
+      const done = !(st && st.done);
+      if (done) meta.status[key] = { done: true, by: userName };  // 先畫上去,存失敗再退回
+      else delete meta.status[key];
+      renderList();
+      try {
+        const r = await apiPost({ action: 'setStatus', v: videoId, key, done, user: userName });
+        if (!r.ok) throw new Error(r.error);
+      } catch (e) {
+        if (done) delete meta.status[key]; else meta.status[key] = st;
+        renderList();
+        toast('⚠ 狀態沒存成功,請重試');
+      }
+    };
+    foot.append(replyBtn, stBtn);
+    card.append(foot);
+  }
+  /* 其他人的整體指示:列在自己的輸入欄下面,同樣可回覆/勾已修改(key=global@名字,不隨內文變動) */
+  function renderGlobals() {
+    const box = $('globalShared');
+    box.innerHTML = '';
+    sharedGlobals.forEach(g => {
+      if (!g.text || !String(g.text).trim()) return;
+      const key = 'global@' + g.user;
+      const st = meta.status[key];
+      const card = document.createElement('div');
+      card.className = 'gCard' + (st && st.done ? ' done' : '');
+      const gu = document.createElement('div'); gu.className = 'gUser'; gu.textContent = g.user + ' 的整體指示';
+      const gt = document.createElement('div'); gt.className = 'gTxt'; gt.textContent = g.text;
+      card.append(gu, gt);
+      appendMetaUI(card, key);
+      box.append(card);
     });
   }
 
@@ -928,7 +961,12 @@
   function reportBody(name, dur, globals, list) {
     let h = `<div class="pr-head"><h1>影片修改清單</h1><div class="pr-meta">${esc(name)}${dur ? '|片長 ' + fmt(dur) : ''}|${new Date().toLocaleString('zh-TW')}|逐幕註記 ${list.length} 條</div></div>`;
     globals.forEach(g => {
-      if (g.text && g.text.trim()) h += `<div class="pr-global"><div class="pr-label">整體指示${g.user ? '(' + esc(g.user) + ')' : ''}</div>${esc(g.text.trim()).replace(/\n/g, '<br>')}</div>`;
+      if (!g.text || !g.text.trim()) return;
+      const gk = 'global@' + g.user;
+      const gst = meta.status[gk];
+      const gDone = gst && gst.done ? `&nbsp;<span style="color:#1d8f4b;font-size:12px;font-weight:700">🟢 已修改${gst.by ? '(' + esc(gst.by) + ')' : ''}</span>` : '';
+      const gReps = (meta.replies[gk] || []).map(r => `<div style="font-size:12px;color:#555;margin-top:1.5mm;padding-left:4mm">↳ 【${esc(r.user)}】${esc(r.text)}</div>`).join('');
+      h += `<div class="pr-global"><div class="pr-label">整體指示${g.user ? '(' + esc(g.user) + ')' : ''}${gDone}</div>${esc(g.text.trim()).replace(/\n/g, '<br>')}${gReps}</div>`;
     });
     h += '<div class="pr-grid">';
     list.forEach((it, i) => {
@@ -964,8 +1002,16 @@
       document.body.append(a); a.click(); a.remove();
     };
     const list = combined();
-    let md = `# 影片回饋:${videoName}\n輸出時間:${new Date().toLocaleString('zh-TW')}|片長:${fmt(video.duration || 0)}|網址:${location.href}\n\n## 整體指示\n${$('globalNotes').value.trim() || '(無)'}\n`;
-    sharedGlobals.forEach(g => { if (g.text && g.text.trim()) md += `【${g.user}】${g.text.trim()}\n`; });
+    const gLine = (user, text) => {
+      const gk = 'global@' + user;
+      const gDone = meta.status[gk] && meta.status[gk].done ? '【🟢已修改】' : '';
+      let s = `【${user}】${gDone}${text}\n`;
+      (meta.replies[gk] || []).forEach(r => { s += `   ↳ 【${r.user}】${r.text}\n`; });
+      return s;
+    };
+    let md = `# 影片回饋:${videoName}\n輸出時間:${new Date().toLocaleString('zh-TW')}|片長:${fmt(video.duration || 0)}|網址:${location.href}\n\n## 整體指示\n`;
+    md += $('globalNotes').value.trim() ? gLine(userName, $('globalNotes').value.trim()) : '(無)\n';
+    sharedGlobals.forEach(g => { if (g.text && g.text.trim()) md += gLine(g.user, g.text.trim()); });
     md += `\n## 逐幕註記\n`;
     for (let i = 0; i < list.length; i++) {
       const n = list[i].n;
