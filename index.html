@@ -83,10 +83,11 @@
   aside h3 { font-size: 13px; color: #9a9aa5; padding: 12px 14px 6px; }
   #globalNotes { margin: 0 14px; height: 84px; background: #2b2b33; border: 1px solid #3a3a44; color: #eee; border-radius: 8px; padding: 8px 10px; font-size: 13px; resize: vertical; }
   #globalNotes:focus { outline: none; border-color: #e46a5d; }
-  #noteList { flex: 1; overflow-y: auto; list-style: none; padding: 6px 14px; display: flex; flex-direction: column; gap: 8px; }
-  #noteList li { background: #24242c; border-radius: 8px; padding: 9px 10px; display: flex; flex-direction: column; transition: border-color .2s; border-left: 3px solid transparent; }
+  #noteList { flex: 1; overflow-y: auto; list-style: none; padding: 6px 14px; display: flex; flex-direction: column; gap: 10px; }
+  /* 狀態色貫穿整張卡:左側色條 紅=未修改/綠=已修改,和右下狀態膠囊同色呼應 */
+  #noteList li { background: #24242c; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; transition: border-color .2s; border-left: 3px solid rgba(224,82,82,.7); }
   #noteList li.done { border-left-color: #58c472; }
-  #noteList li.done .nMain { opacity: .62; }
+  #noteList li.done .nMain { opacity: .6; }
   #noteList .nMain { display: flex; gap: 8px; transition: opacity .2s; }
   #noteList img { width: 74px; border-radius: 4px; cursor: pointer; align-self: flex-start; }
   #noteList .meta { flex: 1; min-width: 0; }
@@ -107,12 +108,16 @@
   #noteList .replyBox input:focus { outline: none; border-color: #e46a5d; }
   #noteList .replyBox button { background: #e46a5d; color: #fff; border: none; border-radius: 8px; padding: 0 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
   #noteList .replyBox button:disabled { opacity: .5; }
-  /* 卡片底部動作列:與內容一體(無分隔線),只留一點呼吸空間,幽靈膠囊靠右 */
-  #noteList .nFoot { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px; }
-  .pill { background: rgba(255,255,255,.05); border: none; color: #8d8d97; border-radius: 999px; padding: 4px 11px; font-size: 11px; cursor: pointer; transition: all .15s; white-space: nowrap; }
-  .pill:hover { background: rgba(255,255,255,.11); color: #e3e3e8; }
-  .pill.stDone { background: rgba(88,196,114,.15); color: #7fd89a; }
-  .pill.stDone:hover { background: rgba(88,196,114,.25); color: #9fe8b6; }
+  /* 卡片底部動作列:與內容一體(無分隔線),回覆=低調文字鈕、狀態=發光圓點膠囊(和左色條同色) */
+  #noteList .nFoot { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 9px; }
+  .replyBtn { background: none; border: none; color: #74747e; border-radius: 7px; padding: 5px 10px; font-size: 11.5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .replyBtn:hover { background: rgba(255,255,255,.07); color: #d8d8de; }
+  .stChip { display: inline-flex; align-items: center; gap: 6px; background: rgba(224,82,82,.10); border: none; color: #e39090; border-radius: 999px; padding: 5px 12px; font-size: 11.5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .stChip .dot { width: 7px; height: 7px; border-radius: 50%; background: #e05252; box-shadow: 0 0 6px rgba(224,82,82,.8); }
+  .stChip:hover { background: rgba(224,82,82,.18); color: #f0b0b0; }
+  .stChip.on { background: rgba(88,196,114,.13); color: #8fdca6; }
+  .stChip.on .dot { background: #58c472; box-shadow: 0 0 6px rgba(88,196,114,.8); }
+  .stChip.on:hover { background: rgba(88,196,114,.22); }
   #exportRow { display: flex; flex-direction: column; gap: 8px; margin: 10px 14px 14px; }
   #pdfBtn { padding: 12px; background: #e8b84a; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
   #exportBtn { padding: 12px; background: #a6e45d; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
@@ -165,6 +170,9 @@
     #globalNotes { order: 4; height: 44px; border-style: dashed; }
     #globalNotes:focus { height: 84px; }
     #exportRow { order: 5; }
+    /* 手機:回覆/狀態鈕加大點按範圍 */
+    .replyBtn { padding: 8px 13px; font-size: 12.5px; }
+    .stChip { padding: 8px 15px; font-size: 12.5px; }
   }
 
   /* ── 浮動通知(自動出現+消失)── */
@@ -867,7 +875,7 @@
       }
       if (openReplyKey === key) li.append(buildReplyBox(key));
       const foot = document.createElement('div'); foot.className = 'nFoot';
-      const replyBtn = document.createElement('button'); replyBtn.className = 'pill'; replyBtn.textContent = '💬 回覆';
+      const replyBtn = document.createElement('button'); replyBtn.className = 'replyBtn'; replyBtn.textContent = '回覆';
       replyBtn.onclick = () => {
         openReplyKey = openReplyKey === key ? null : key;
         replyDraft = '';
@@ -876,8 +884,8 @@
         if (inp) inp.focus();
       };
       const stBtn = document.createElement('button');
-      stBtn.className = 'pill' + (st && st.done ? ' stDone' : '');
-      stBtn.textContent = st && st.done ? '🟢 已修改' : '🔴 未修改';
+      stBtn.className = 'stChip' + (st && st.done ? ' on' : '');
+      stBtn.innerHTML = '<span class="dot"></span>' + (st && st.done ? '已修改' : '未修改');
       if (st && st.done && st.by) stBtn.title = st.by + ' 標記已修改';
       stBtn.onclick = async () => {
         const done = !(st && st.done);
