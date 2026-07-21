@@ -107,31 +107,16 @@
   #noteList .replyBox input:focus { outline: none; border-color: #e46a5d; }
   #noteList .replyBox button { background: #e46a5d; color: #fff; border: none; border-radius: 8px; padding: 0 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
   #noteList .replyBox button:disabled { opacity: .5; }
-  /* 卡片底部動作列:跟內容拉開一點距離+淡分隔線,按鈕靠右下 */
-  #noteList .nFoot { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.07); }
-  .pill { background: transparent; border: 1px solid #3a3a44; color: #9a9aa5; border-radius: 999px; padding: 4px 12px; font-size: 11.5px; cursor: pointer; transition: all .15s; white-space: nowrap; }
-  .pill:hover { border-color: #55555f; color: #ddd; background: #2b2b33; }
-  .pill.stDone { background: rgba(88,196,114,.13); border-color: rgba(88,196,114,.45); color: #7fd89a; }
-  .pill.stDone:hover { background: rgba(88,196,114,.22); border-color: rgba(88,196,114,.7); color: #9fe8b6; }
+  /* 卡片底部動作列:與內容一體(無分隔線),只留一點呼吸空間,幽靈膠囊靠右 */
+  #noteList .nFoot { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 8px; }
+  .pill { background: rgba(255,255,255,.05); border: none; color: #8d8d97; border-radius: 999px; padding: 4px 11px; font-size: 11px; cursor: pointer; transition: all .15s; white-space: nowrap; }
+  .pill:hover { background: rgba(255,255,255,.11); color: #e3e3e8; }
+  .pill.stDone { background: rgba(88,196,114,.15); color: #7fd89a; }
+  .pill.stDone:hover { background: rgba(88,196,114,.25); color: #9fe8b6; }
   #exportRow { display: flex; flex-direction: column; gap: 8px; margin: 10px 14px 14px; }
   #pdfBtn { padding: 12px; background: #e8b84a; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
   #exportBtn { padding: 12px; background: #a6e45d; color: #16161a; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
   #exportMsg { text-align: center; font-size: 12px; color: #a6e45d; min-height: 16px; }
-
-  /* ── 橫式影片(桌機):影片改置頂放大,註記變下方多欄卡片,不再擠在窄側欄 ── */
-  @media (min-width: 1025px) {
-    body.ls main { flex-direction: column; }
-    body.ls video { max-width: calc(100vw - 48px); max-height: 44vh; }
-    body.ls #stage { flex: 0 0 auto; padding-bottom: 8px; }
-    body.ls aside { flex: 1 1 auto; min-height: 0; border-left: none; border-top: 1px solid #2b2b33; }
-    body.ls #noteList { display: grid; grid-template-columns: repeat(auto-fill, minmax(370px, 1fr)); gap: 10px; align-content: start; padding: 8px 16px; }
-    body.ls #noteList li { align-self: start; }
-    body.ls #globalNotes { height: 52px; margin: 0 16px; }
-    body.ls aside h3 { padding: 10px 16px 6px; }
-    body.ls #exportRow { flex-direction: row; align-items: center; gap: 10px; margin: 6px 16px 12px; }
-    body.ls #pdfBtn, body.ls #exportBtn { flex: 0 0 auto; padding: 11px 22px; }
-    body.ls #exportMsg { text-align: left; }
-  }
 
   /* ── 平板/手機:改上下排列 ── */
   @media (max-width: 1024px) {
@@ -606,11 +591,7 @@
     redraw();
   }
   // 收載入畫面用 loadedmetadata:iOS 常不發 loadeddata(害過手機永遠卡「下載影片中…100%」)
-  video.addEventListener('loadedmetadata', () => {
-    // 橫式影片:桌機改上下排列(影片放大置頂+註記多欄),直式維持左右排
-    document.body.classList.toggle('ls', video.videoWidth > video.videoHeight);
-    fitCanvas(); $('videoLoading').hidden = true; $('timeLabel').textContent = `${fmt(0)} / ${fmt(video.duration)}`;
-  });
+  video.addEventListener('loadedmetadata', () => { fitCanvas(); $('videoLoading').hidden = true; $('timeLabel').textContent = `${fmt(0)} / ${fmt(video.duration)}`; });
   video.addEventListener('loadeddata', () => { $('videoLoading').hidden = true; });
   new ResizeObserver(fitCanvas).observe(video);
   function redraw() {
