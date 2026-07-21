@@ -96,9 +96,11 @@
   #noteList .txt { font-size: 12.5px; color: #ddd; margin-top: 3px; word-break: break-word; white-space: pre-wrap; }
   #noteList .del { background: none; border: none; color: #666; cursor: pointer; font-size: 14px; align-self: flex-start; }
   #noteList .del:hover { color: #e46a5d; }
-  /* 回覆串:縮排+左側細軌,跟主註記視覺分層 */
-  #noteList .replies { display: flex; flex-direction: column; gap: 5px; margin: 9px 0 0 5px; padding-left: 10px; border-left: 2px solid #34343e; }
-  #noteList .reply { font-size: 12px; color: #c9c9d2; line-height: 1.5; display: flex; gap: 7px; align-items: baseline; }
+  /* 回覆串:深一階的底色+↪ 箭頭,跟主註記做出區隔 */
+  #noteList .replies { display: flex; flex-direction: column; gap: 4px; margin-top: 9px; }
+  #noteList .reply { background: #1c1c23; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #c9c9d2; line-height: 1.5; display: flex; gap: 7px; align-items: baseline; }
+  #noteList .reply.pending { opacity: .5; }
+  #noteList .reply .arw { color: #5c5c66; font-size: 11px; flex: 0 0 auto; }
   #noteList .reply .ru { color: #e8b84a; font-size: 11px; font-weight: 700; flex: 0 0 auto; }
   #noteList .reply .rt { min-width: 0; word-break: break-word; white-space: pre-wrap; }
   #noteList .reply .rx { background: none; border: none; color: #555; cursor: pointer; font-size: 12px; margin-left: auto; flex: 0 0 auto; padding: 0 2px; }
@@ -567,7 +569,7 @@
     } catch (e) { $('noteList').innerHTML = ''; setStatus('⚠ 註記載入失敗'); }
   }
   async function refreshOthers() {
-    if (openReplyKey !== null) return;  // 回覆打到一半不重畫清單,避免輸入框被洗掉
+    if (openReplyKey !== null || pendingReplies > 0) return;  // 回覆打到一半/送出中不重畫清單,避免輸入框或送出中的回覆被洗掉
     try {
       const d = await apiGet({ action: 'notes', v: videoId });
       extNotes = (d.notes || []).filter(n => n.user !== userName);
@@ -792,7 +794,7 @@
   });
 
   /* ── 註記清單(含 🔴/🟢 狀態勾選與回覆串)── */
-  let openReplyKey = null, replyDraft = '';
+  let openReplyKey = null, replyDraft = '', pendingReplies = 0;
   function buildReplyBox(key) {
     const box = document.createElement('div'); box.className = 'replyBox';
     const inp = document.createElement('input'); inp.placeholder = '回覆這條註記…';
@@ -802,14 +804,25 @@
     const doSend = async () => {
       const text = inp.value.trim();
       if (!text) return;
-      send.disabled = true;
+      // 樂觀更新:先上牆(半透明「送出中」),後端存好轉正式;失敗才收回並把字還給輸入框
+      const temp = { user: userName, text, at: 'pending', pending: true };
+      (meta.replies[key] = meta.replies[key] || []).push(temp);
+      openReplyKey = null; replyDraft = '';
+      pendingReplies++;
+      renderList();
       try {
         const r = await apiPost({ action: 'addReply', v: videoId, key, user: userName, text });
         if (!r.ok) throw new Error(r.error);
-        (meta.replies[key] = meta.replies[key] || []).push(r.reply || { user: userName, text, at: new Date().toISOString() });
-        openReplyKey = null; replyDraft = '';
-        renderList();
-      } catch (e) { toast('⚠ 回覆沒存成功,請重試'); send.disabled = false; }
+        Object.assign(temp, r.reply || { at: new Date().toISOString() });
+        delete temp.pending;
+      } catch (e) {
+        meta.replies[key] = (meta.replies[key] || []).filter(x => x !== temp);
+        if (!meta.replies[key].length) delete meta.replies[key];
+        openReplyKey = key; replyDraft = text;
+        toast('⚠ 回覆沒存成功,再按一次送出');
+      }
+      pendingReplies--;
+      renderList();
     };
     send.onclick = doSend;
     inp.addEventListener('keydown', e => {
@@ -855,11 +868,12 @@
       if (reps.length) {
         const box = document.createElement('div'); box.className = 'replies';
         reps.forEach(r => {
-          const row = document.createElement('div'); row.className = 'reply';
-          const ru = document.createElement('span'); ru.className = 'ru'; ru.textContent = r.user;
+          const row = document.createElement('div'); row.className = 'reply' + (r.pending ? ' pending' : '');
+          const arw = document.createElement('span'); arw.className = 'arw'; arw.textContent = '↪';
+          const ru = document.createElement('span'); ru.className = 'ru'; ru.textContent = r.user + (r.pending ? '(送出中…)' : '');
           const rt = document.createElement('span'); rt.className = 'rt'; rt.textContent = r.text;
-          row.append(ru, rt);
-          if (r.user === userName) {  // 只能刪自己的回覆
+          row.append(arw, ru, rt);
+          if (r.user === userName && !r.pending) {  // 只能刪自己的回覆(送出中先不給刪)
             const rx = document.createElement('button'); rx.className = 'rx'; rx.textContent = '✕';
             rx.onclick = async () => {
               meta.replies[key] = reps.filter(x => x !== r);
