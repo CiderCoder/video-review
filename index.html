@@ -227,6 +227,7 @@
   <span id="fileName"></span>
   <span style="flex:1"></span>
   <span id="shareStatus"></span>
+  <span id="syncBadge" style="font-size:11.5px;padding:2px 8px;border-radius:10px;background:#2a2a2e;color:#a6e45d;display:none"></span>
   <button id="backBtn" class="hdrBtn" hidden>← 回目錄</button>
 </header>
 
@@ -594,6 +595,8 @@
       });
       renderList();
       setStatus(`已載入 ${combined().length} 條註記`);
+      restoreBackupIfAny();   // 本機有沒同步到的備份就還原+補存
+      updateSyncBadge();
     } catch (e) { $('noteList').innerHTML = ''; setStatus('⚠ 註記載入失敗'); }
   }
   async function refreshOthers() {
@@ -607,14 +610,74 @@
     } catch (e) {}
   }
 
-  let saveTimer = null;
-  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 800); }
+  /* ── 同步可靠化(2026-08-21 BO片修復):dirty 追蹤+失敗自動重試+localStorage 備援+離頁補送 ──
+     手機 Safari 打完字馬上關頁/切 app,debounce 還沒開火或請求被殺,註記就消失(果妹 v2 實際案例)。
+     四層防護:①每次變更「同步先寫」localStorage(0 延遲)②saveNow 失敗每 5 秒自動重試到成功
+     ③離頁(pagehide/切背景)用 sendBeacon 補送 ④重開頁面時發現備份比後端新→自動還原+補存 */
+  let saveTimer = null, retryTimer = null, dirty = false;
+  const lsKey = () => `notesBackup:${videoId}:${userName}`;
+  function savePayload() { return { action: 'saveNotes', v: videoId, user: userName, videoName, global: $('globalNotes').value, notes }; }
+  function updateSyncBadge() {
+    const b = $('syncBadge');
+    if (!b) return;
+    b.style.display = 'inline-block';
+    if (dirty) { b.textContent = '● 未同步'; b.style.color = '#e8b84a'; }
+    else { b.textContent = '✓ 已同步'; b.style.color = '#a6e45d'; }
+  }
+  function writeBackup() {
+    try { localStorage.setItem(lsKey(), JSON.stringify({ ts: Date.now(), global: $('globalNotes').value, notes })); } catch (e) {}  // 配額滿(附圖大)就算了,還有重試層
+  }
+  function saveSoon() {
+    dirty = true;
+    writeBackup();          // 同步先寫本機:就算下一毫秒頁面被殺,重開也救得回來
+    updateSyncBadge();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 800);
+  }
   async function saveNow() {
+    clearTimeout(retryTimer);
     try {
       setStatus('儲存中…');
-      const r = await apiPost({ action: 'saveNotes', v: videoId, user: userName, videoName, global: $('globalNotes').value, notes });
-      setStatus(r.ok ? '已自動儲存 ' + new Date().toLocaleTimeString('zh-TW') : '⚠ 儲存失敗');
-    } catch (e) { setStatus('⚠ 儲存失敗(網路?),註記還在頁面上,恢復連線會再存'); }
+      const r = await apiPost(savePayload());
+      if (!r.ok) throw new Error(r.error || 'save failed');
+      dirty = false;
+      try { localStorage.removeItem(lsKey()); } catch (e) {}
+      updateSyncBadge();
+      setStatus('已自動儲存 ' + new Date().toLocaleTimeString('zh-TW'));
+    } catch (e) {
+      setStatus('⚠ 儲存失敗,5 秒後自動重試(註記已備份在本機)');
+      updateSyncBadge();
+      retryTimer = setTimeout(saveNow, 5000);  // 一直重試到成功,不再只喊一次就放棄
+    }
+  }
+  // 離頁/切背景:還沒同步就用 sendBeacon 搶送一發(GAS doPost 收 text/plain 沒問題);LS 備份仍在,雙保險
+  function flushOnLeave() {
+    if (!dirty || !videoId) return;
+    try { navigator.sendBeacon(GAS_URL, JSON.stringify({ ...savePayload(), token: API_TOKEN })); } catch (e) {}
+  }
+  window.addEventListener('pagehide', flushOnLeave);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushOnLeave(); });
+  // 重開頁面:本機備份比後端多/新 → 還原進清單並補存(loadNotes 成功後呼叫)
+  function restoreBackupIfAny() {
+    let bak;
+    try { bak = JSON.parse(localStorage.getItem(lsKey()) || 'null'); } catch (e) { bak = null; }
+    if (!bak || (!Array.isArray(bak.notes) && !bak.global)) return;
+    let changed = 0;
+    (bak.notes || []).forEach(bn => {
+      const dup = notes.some(n => Math.abs(n.t - bn.t) < 0.01 && n.text === bn.text);
+      if (!dup) { notes.push(bn); changed++; }
+    });
+    if (bak.global && bak.global !== $('globalNotes').value && bak.global.length >= $('globalNotes').value.length) {
+      $('globalNotes').value = bak.global; changed++;
+    }
+    if (changed) {
+      notes.sort((a, b) => a.t - b.t);
+      renderList();
+      toast(`已還原 ${changed} 筆上次沒同步到的註記,補存中…`, 4000);
+      saveSoon();
+    } else {
+      try { localStorage.removeItem(lsKey()); } catch (e) {}
+    }
   }
   $('globalNotes').addEventListener('input', saveSoon);
 
@@ -731,10 +794,32 @@
     updateRangeBtn();
   };
 
-  /* ── 播放控制 ── */
-  $('playBtn').onclick = () => video.paused ? video.play() : video.pause();
-  video.addEventListener('play', () => { $('playBtn').textContent = '⏸ 暫停'; strokes = []; redraw(); });
-  video.addEventListener('pause', () => $('playBtn').textContent = '▶ 播放');
+  /* ── 播放控制(2026-08-21 BO片修復)──
+     舊版:載入中按播放→按鈕變「⏸暫停」但根本沒在播(狀態說謊);載入完也不自動播。
+     新版:①載入中按播放=排「載入後自動播放」,按鈕誠實顯示 ②影片就緒自動嘗試播放
+     (瀏覽器擋 autoplay 就維持暫停,按鈕不說謊)③每 400ms 對齊按鈕字樣與實際 paused 狀態 */
+  let wantAutoplay = true;   // 預設:載入完就自動播(她的期待);被瀏覽器拒絕就乖乖顯示 ▶
+  const videoReady = () => video.src && video.readyState >= 2;
+  function syncPlayLabel() {
+    if (!videoReady()) {
+      $('playBtn').textContent = wantAutoplay ? '⏳ 載入中,好了自動播(按此取消)' : '▶ 播放';
+      return;
+    }
+    $('playBtn').textContent = video.paused ? '▶ 播放' : '⏸ 暫停';
+  }
+  setInterval(syncPlayLabel, 400);
+  $('playBtn').onclick = () => {
+    if (!videoReady()) { wantAutoplay = !wantAutoplay; syncPlayLabel(); return; }  // 還沒載好:切換「好了要不要自動播」,不假播
+    video.paused ? video.play().catch(() => syncPlayLabel()) : video.pause();
+  };
+  video.addEventListener('canplay', () => {
+    if (wantAutoplay && video.paused && video.currentTime < 0.05) {
+      wantAutoplay = false;
+      video.play().catch(() => syncPlayLabel());  // iOS 擋無手勢 autoplay 就作罷,按鈕會顯示 ▶
+    }
+  }, { once: true });
+  video.addEventListener('play', () => { syncPlayLabel(); strokes = []; redraw(); });
+  video.addEventListener('pause', syncPlayLabel);
   video.addEventListener('timeupdate', () => {
     $('seek').value = video.duration ? video.currentTime / video.duration * 1000 : 0;
     $('timeLabel').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration || 0)}`;
