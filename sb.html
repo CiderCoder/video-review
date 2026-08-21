@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分鏡表審查</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#16161a; color:#eee; font-family:"PingFang TC","Heiti TC",sans-serif; }
+  header { position:sticky; top:0; z-index:5; padding:10px 14px; background:#202027; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  #who { color:#9a9aa5; font-size:12.5px; }
+  #syncBadge { font-size:11.5px; padding:2px 8px; border-radius:10px; background:#2a2a2e; color:#a6e45d; }
+  #hint { color:#9a9aa5; font-size:12px; width:100%; }
+  main { padding:10px 12px 80px; max-width:980px; margin:0 auto; }
+  .scene { background:#1e1e24; border-radius:12px; padding:10px 12px 12px; margin-bottom:14px; border:1px solid #2a2a32; }
+  .scene.hasNote { border-color:#e8b84a; }
+  .sh { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:6px; }
+  .sid { font-weight:700; font-size:17px; color:#fff; }
+  .stc { color:#9a9aa5; font-size:12px; }
+  .src { color:#7f7f8a; font-size:11.5px; margin-left:auto; }
+  .frames { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:8px; }
+  .frames img { width:100%; aspect-ratio:9/16; object-fit:cover; border-radius:8px; background:#000; display:block; }
+  .vo { font-size:14px; line-height:1.5; color:#e8e8ee; margin:4px 0 8px; }
+  .vo b { color:#e8b84a; font-weight:600; margin-right:6px; }
+  .chips { display:flex; gap:6px; margin-bottom:6px; flex-wrap:wrap; }
+  .chip { border:none; border-radius:16px; padding:7px 13px; font-size:13px; cursor:pointer; color:#111; font-weight:600; }
+  .chip.a { background:#e46a5d; color:#fff; } .chip.b { background:#e8b84a; } .chip.c { background:#a6e45d; } .chip.x { background:#2b2b33; color:#ccc; font-weight:400; }
+  textarea { width:100%; min-height:44px; background:#121216; color:#eee; border:1px solid #34343e; border-radius:8px; padding:8px 10px; font-size:14px; resize:vertical; font-family:inherit; }
+  textarea:focus { outline:none; border-color:#e46a5d; }
+  #globalBox { background:#1e1e24; border-radius:12px; padding:10px 12px; margin:6px 0 16px; border:1px solid #2a2a32; }
+  #globalBox label { display:block; color:#9a9aa5; font-size:12.5px; margin-bottom:6px; }
+  #nameModal { position:fixed; inset:0; background:rgba(0,0,0,.82); display:flex; align-items:center; justify-content:center; z-index:20; }
+  #nameModal .box { background:#25252c; border-radius:14px; padding:22px 20px; text-align:center; }
+  #nameModal .box h2 { margin:0 0 4px; font-size:16px; } #nameModal .box p { margin:0 0 12px; color:#9a9aa5; font-size:12px; }
+  #namePresets { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .namePreset { background:#e8b84a; color:#111; border:none; border-radius:9px; padding:11px 16px; font-size:15px; font-weight:700; cursor:pointer; }
+  .namePreset.current { outline:2px solid #e46a5d; }
+  #toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%) translateY(20px); background:#e8b84a; color:#111; padding:9px 16px; border-radius:9px; font-size:13.5px; opacity:0; transition:all .2s; pointer-events:none; z-index:30; }
+  #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  #empty { color:#9a9aa5; padding:30px; text-align:center; }
+</style></head><body>
+<header>
+  <h1 id="title">分鏡表審查</h1>
+  <span id="who"></span>
+  <span id="syncBadge">…</span>
+  <div id="hint">每幕:點快捷鈕(換檔=換別的檔案/換段=同檔換時間/換畫面=都可以)或直接打字,自動儲存;沒意見的幕不用理。</div>
+</header>
+<div id="nameModal" hidden><div class="box"><h2>你是誰?</h2><p>點名字直接開始</p><div id="namePresets"></div></div></div>
+<main>
+  <div id="globalBox"><label>整體指示(不綁幕的:風格/音樂/標題…)</label><textarea id="globalNotes" placeholder="例:整體節奏再快一點"></textarea></div>
+  <div id="list"><div id="empty">載入中…</div></div>
+</main>
+<div id="toast"></div>
+<script>
+  const GAS_URL = 'https://script.google.com/macros/s/AKfycbx1k11D5coWNMPAoY9h7Y5QhUF1nFNmhwlp7zk0LuAJRsAlMaYjnSXktaWkH2Mao7k/exec';
+  const API_TOKEN = '92bdc9335584edfa68959e9011f775babca4b60044c576f4';
+  const $ = id => document.getElementById(id);
+  const qs = new URLSearchParams(location.search);
+  const sbId = qs.get('sb');
+  const videoId = 'sb-' + sbId;           // 註記存在後端的 id(跟影片 id 不撞)
+  const PRESET_NAMES = ['果妹','Joey','Boog','Alan','果爹'];
+  let userName = localStorage.getItem('reviewerName') || '';
+  let data = null, notesMap = {}, dirty = false, saveTimer = null, retryTimer = null;
+  const lsKey = () => `sbBackup:${videoId}:${userName}`;
+  function toast(m, ms){ const t=$('toast'); t.textContent=m; clearTimeout(t._t); requestAnimationFrame(()=>{ t.classList.add('show'); t._t=setTimeout(()=>t.classList.remove('show'), ms||2200); }); }
+  async function fetchJsonRetry(f){ let e; for(let i=0;i<3;i++){ try{ const r=await f(); if(!r.ok) throw new Error('HTTP '+r.status); return await r.json(); }catch(err){ e=err; if(i<2) await new Promise(r=>setTimeout(r,1200*(i+1))); } } throw e; }
+  const apiGet = p => fetchJsonRetry(()=>fetch(GAS_URL+'?'+new URLSearchParams({...p, token:API_TOKEN})));
+  const apiPost = o => fetchJsonRetry(()=>fetch(GAS_URL,{method:'POST', body:JSON.stringify({...o, token:API_TOKEN})}));
+  function askName(){ return new Promise(res=>{ $('nameModal').hidden=false; const box=$('namePresets'); box.innerHTML=''; PRESET_NAMES.forEach(nm=>{ const b=document.createElement('button'); b.className='namePreset'+(nm===userName?' current':''); b.textContent=nm; b.onclick=()=>{ userName=nm; localStorage.setItem('reviewerName',nm); $('nameModal').hidden=true; res(nm); }; box.append(b); }); }); }
+  function buildNotes(){ return Object.entries(notesMap).filter(([k,v])=>v && v.trim()).map(([k,v])=>{ const s=data.scenes.find(x=>x.id===k); return { t:s.start, t2:s.end, text:`${k}|${v.trim()}`, img:null, hasInk:false, refs:[] }; }); }
+  function payload(){ return { action:'saveNotes', v:videoId, user:userName, videoName:'分鏡_'+(data.title||sbId), global:$('globalNotes').value, notes:buildNotes() }; }
+  function badge(){ const b=$('syncBadge'); if(dirty){ b.textContent='● 未同步'; b.style.color='#e8b84a'; } else { b.textContent='✓ 已同步'; b.style.color='#a6e45d'; } }
+  function backup(){ try{ localStorage.setItem(lsKey(), JSON.stringify({ts:Date.now(), global:$('globalNotes').value, notesMap})); }catch(e){} }
+  function saveSoon(){ dirty=true; backup(); badge(); clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,800); }
+  async function saveNow(){ clearTimeout(retryTimer); try{ const r=await apiPost(payload()); if(!r.ok) throw new Error(r.error||'save failed'); dirty=false; try{localStorage.removeItem(lsKey());}catch(e){} badge(); }catch(e){ badge(); retryTimer=setTimeout(saveNow,5000); } }
+  function flush(){ if(!dirty) return; try{ navigator.sendBeacon(GAS_URL, JSON.stringify({...payload(), token:API_TOKEN})); }catch(e){} }
+  window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flush(); });
+  function render(){
+    const list=$('list'); list.innerHTML='';
+    data.scenes.forEach(s=>{
+      const card=document.createElement('div'); card.className='scene'+(notesMap[s.id]?' hasNote':''); card.id='card-'+s.id;
+      card.innerHTML=`<div class="sh"><span class="sid">${s.id}</span><span class="stc">成品 ${s.start.toFixed(1)}–${s.end.toFixed(1)}s</span><span class="src">${s.src||''}</span></div>
+        <div class="frames">${(s.frames||[]).map(f=>`<img src="${f}" loading="lazy">`).join('')}</div>
+        <div class="vo"><b>講</b>${s.vo||''}</div>
+        <div class="chips"><button class="chip a" data-t="換檔">換檔</button><button class="chip b" data-t="換段">換段</button><button class="chip c" data-t="換畫面">換畫面</button><button class="chip x" data-t="">清除</button></div>
+        <textarea placeholder="補充(例:晚3秒/用沒人的/換成A9那支)">${notesMap[s.id]||''}</textarea>`;
+      const ta=card.querySelector('textarea');
+      card.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{ const w=ch.dataset.t; if(!w){ ta.value=''; } else { const cur=ta.value.trim(); ta.value = cur && !/^(換檔|換段|換畫面)/.test(cur) ? w+' '+cur : (cur.startsWith(w)? cur : w+(cur? ' '+cur.replace(/^(換檔|換段|換畫面)\s*/,'') : ' ')); } notesMap[s.id]=ta.value; card.classList.toggle('hasNote', !!ta.value.trim()); saveSoon(); ta.focus(); });
+      ta.addEventListener('input', ()=>{ notesMap[s.id]=ta.value; card.classList.toggle('hasNote', !!ta.value.trim()); saveSoon(); });
+      list.append(card);
+    });
+  }
+  async function loadExisting(){
+    try{ const d=await apiGet({action:'notes', v:videoId}); (d.notes||[]).forEach(n=>{ if(n.user!==userName) return; const m=/^([^|]+)\|([\s\S]*)$/.exec(n.text||''); if(m) notesMap[m[1]]=m[2]; }); (d.globals||[]).forEach(g=>{ if(g.user===userName) $('globalNotes').value=g.text||''; }); }catch(e){}
+    try{ const bak=JSON.parse(localStorage.getItem(lsKey())||'null'); if(bak){ let changed=0; Object.entries(bak.notesMap||{}).forEach(([k,v])=>{ if(v && !notesMap[k]){ notesMap[k]=v; changed++; } }); if(bak.global && !$('globalNotes').value){ $('globalNotes').value=bak.global; changed++; } if(changed){ toast(`已還原 ${changed} 筆未同步內容,補存中…`,3500); dirty=true; saveSoon(); } else localStorage.removeItem(lsKey()); } }catch(e){}
+  }
+  (async()=>{
+    if(!sbId){ $('list').innerHTML='<div id="empty">網址缺 ?sb=分鏡表ID</div>'; return; }
+    try{ data = await (await fetch(`sb/${encodeURIComponent(sbId)}.json`, {cache:'no-store'})).json(); }catch(e){ $('list').innerHTML='<div id="empty">讀不到分鏡表資料</div>'; return; }
+    document.title = '分鏡_'+(data.title||sbId); $('title').textContent = '分鏡表:'+(data.title||sbId);
+    await askName(); $('who').textContent = userName;
+    await loadExisting(); render(); badge();
+    $('globalNotes').addEventListener('input', saveSoon);
+  })();
+</script></body></html>
