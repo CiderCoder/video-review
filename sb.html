@@ -76,16 +76,19 @@
   function flush(){ if(!dirty) return; try{ navigator.sendBeacon(GAS_URL, JSON.stringify({...payload(), token:API_TOKEN})); }catch(e){} }
   window.addEventListener('pagehide', flush); document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flush(); });
   function render(){
+    const chipLabels = (Array.isArray(data.chips)&&data.chips.length? data.chips : ['換檔','換段','換畫面']).slice(0,4);
+    const chipRe = new RegExp('^('+chipLabels.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')\\s*');
+    if(data.hint) $('hint').textContent = data.hint;
     const list=$('list'); list.innerHTML='';
     data.scenes.forEach(s=>{
       const card=document.createElement('div'); card.className='scene'+(notesMap[s.id]?' hasNote':''); card.id='card-'+s.id;
       card.innerHTML=`<div class="sh"><span class="sid">${s.id}</span><span class="stc">成品 ${s.start.toFixed(1)}–${s.end.toFixed(1)}s</span><span class="src">${s.src||''}</span></div>
         <div class="frames">${(s.frames||[]).map(f=>`<img src="${f}" loading="lazy" onload="if(this.naturalWidth>this.naturalHeight)this.classList.add('land')">`).join('')}</div>
         <div class="vo"><b>講</b>${s.vo||''}</div>
-        <div class="chips"><button class="chip a" data-t="換檔">換檔</button><button class="chip b" data-t="換段">換段</button><button class="chip c" data-t="換畫面">換畫面</button><button class="chip x" data-t="">清除</button></div>
-        <textarea placeholder="補充(例:晚3秒/用沒人的/換成A9那支)">${notesMap[s.id]||''}</textarea>`;
+        <div class="chips">${chipLabels.map((w,ci)=>`<button class="chip ${'abc'[ci%3]}" data-t="${w}">${w}</button>`).join('')}<button class="chip x" data-t="">清除</button></div>
+        <textarea placeholder="${data.notePlaceholder||'補充(例:晚3秒/用沒人的/換成A9那支)'}">${notesMap[s.id]||''}</textarea>`;
       const ta=card.querySelector('textarea');
-      card.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{ const w=ch.dataset.t; if(!w){ ta.value=''; } else { const cur=ta.value.trim(); ta.value = cur && !/^(換檔|換段|換畫面)/.test(cur) ? w+' '+cur : (cur.startsWith(w)? cur : w+(cur? ' '+cur.replace(/^(換檔|換段|換畫面)\s*/,'') : ' ')); } notesMap[s.id]=ta.value; card.classList.toggle('hasNote', !!ta.value.trim()); saveSoon(); ta.focus(); });
+      card.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{ const w=ch.dataset.t; if(!w){ ta.value=''; } else { const cur=ta.value.trim(); ta.value = cur && !chipRe.test(cur) ? w+' '+cur : (cur.startsWith(w)? cur : w+(cur? ' '+cur.replace(chipRe,'').replace(/^\s*/,'') : ' ')); } notesMap[s.id]=ta.value; card.classList.toggle('hasNote', !!ta.value.trim()); saveSoon(); ta.focus(); });
       ta.addEventListener('input', ()=>{ notesMap[s.id]=ta.value; card.classList.toggle('hasNote', !!ta.value.trim()); saveSoon(); });
       list.append(card);
     });
