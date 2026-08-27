@@ -254,7 +254,7 @@
   <section id="stage">
     <div id="videoWrap">
       <div id="videoBox">
-        <video id="video" playsinline crossorigin="anonymous"></video>
+        <video id="video" playsinline crossorigin="anonymous" preload="auto"></video>
         <canvas id="ink"></canvas>
         <div id="videoLoading" hidden><div class="spinner"></div><div id="videoLoadingText">影片載入中…</div></div>
       </div>
@@ -534,7 +534,7 @@
       w.textContent = 'ℹ️ 這是舊影片(存 Drive),Safari 會先整支下載再播放;新上傳的影片(存 R2)Safari 可直接串流';
       $('stage').prepend(w);
     }
-    async function loadViaBlob() {  // 整檔抓下來用本地 blob 播(繞過影片元件的跨站串流限制,截圖也能用)
+    async function loadViaBlob(resumeT, resumeWasPlaying) {  // 整檔抓下來用本地 blob 播(繞過跨站串流限制,截圖也能用);resumeT=中途從串流切過來時的續播秒數
       try {
         $('videoLoading').hidden = false;
         setStatus('下載影片中… 0%');
@@ -554,8 +554,12 @@
           $('videoLoadingText').textContent = p;
         }
         video.removeAttribute('crossorigin');
+        // 中途從串流切過來:下載期間串流還在播,以「換檔當下」位置與播放狀態為準續播
+        const swapT = resumeT !== undefined ? (video.currentTime || resumeT) : 0.01;
+        const swapPlay = resumeWasPlaying && !video.paused;
         // iOS 對 blob 影片不見得會發 loadeddata:先強制 seek 逼它畫出第一格
-        video.addEventListener('loadedmetadata', () => { try { video.currentTime = 0.01; } catch (e) {} }, { once: true });
+        video.addEventListener('loadedmetadata', () => { try { video.currentTime = swapT; } catch (e) {} }, { once: true });
+        if (swapPlay) video.addEventListener('canplay', () => safePlay(), { once: true });
         video.src = URL.createObjectURL(new Blob(chunks, { type: 'video/mp4' }));
         video.load();
         $('videoLoadingText').textContent = '處理中…';
@@ -572,6 +576,17 @@
     } else {
       if (isIOS) video.removeAttribute('crossorigin');  // iOS 大檔:改無 crossorigin 串流(截圖會失效但播得動)
       video.addEventListener('error', () => { setStatus('串流失敗,改用下載模式…'); loadViaBlob(); }, { once: true });
+      // 2026-08-27 她回報「播一下下又卡住」:串流被網路餓死,播放中自己斷糧 3 次就切整支下載模式(下載完不會再卡,續播原秒數)
+      let stallCount = 0, stallSwitched = false;
+      video.addEventListener('waiting', () => {
+        if (stallSwitched || video.paused || video.seeking) return;  // 跳秒造成的等待不算斷糧
+        stallCount++;
+        if (stallCount >= 3 && (!entry || !entry.size || entry.size <= 500 * 1048576)) {
+          stallSwitched = true;
+          setStatus('串流一直卡,改抓整支下載(下載完就不會再卡)…');
+          loadViaBlob(video.currentTime, true);
+        }
+      });
       video.src = mediaUrl();
     }
     await loadNotes();
@@ -708,7 +723,7 @@
   }
   ink.addEventListener('pointerdown', e => {
     if (!video.src) return;
-    if (!video.paused) video.pause();
+    if (!video.paused) safePause();
     ink.setPointerCapture(e.pointerId);
     cur = [];
     strokes.push(cur);
@@ -807,22 +822,31 @@
       $('playBtn').textContent = wantAutoplay ? '⏳ 載入中,好了自動播(按此取消)' : '▶ 播放';
       return;
     }
-    $('playBtn').textContent = video.paused ? '▶ 播放' : '⏸ 暫停';
+    if (video.paused) $('playBtn').textContent = '▶ 播放';
+    else if (video.readyState < 3 || video.seeking) $('playBtn').textContent = '⏳ 緩衝中…(按此暫停)';  // 播放中斷糧:按鍵有吃到,是網路在等,不能看起來像沒反應
+    else $('playBtn').textContent = '⏸ 暫停';
   }
   setInterval(syncPlayLabel, 400);
+  ['waiting', 'playing', 'stalled', 'seeked'].forEach(t => video.addEventListener(t, syncPlayLabel));
   /* Chromium 實測(2026-08-27):seek 還沒完成時呼叫 play(),瀏覽器會自己中止播放請求(AbortError)且元素回到 paused
-     →「連按跳秒後馬上按播放」第一下永遠蒸發=她回報的不靈敏主因;被中止就掛 seeked 補播,點擊不蒸發 */
+     →「連按跳秒後馬上按播放」第一下永遠蒸發=她回報的不靈敏主因;被中止就記 resumeAfterSeek,seek 完補播,點擊不蒸發;
+     任何「明確暫停」(safePause)都取消補播,不會暫停完又自己復活 */
+  let resumeAfterSeek = false;
   function safePlay() {
     video.play().catch(err => {
       if (err && err.name === 'AbortError') {
-        if (video.seeking) video.addEventListener('seeked', () => { if (video.paused) video.play().catch(() => syncPlayLabel()); }, { once: true });
+        if (video.seeking) resumeAfterSeek = true;
         else if (video.paused) video.play().catch(() => syncPlayLabel());
       } else syncPlayLabel();  // NotAllowedError 等:乖乖顯示 ▶,不說謊
     });
   }
+  function safePause() { resumeAfterSeek = false; video.pause(); }
+  video.addEventListener('seeked', () => {
+    if (resumeAfterSeek) { resumeAfterSeek = false; if (video.paused) video.play().catch(() => syncPlayLabel()); }
+  });
   $('playBtn').onclick = () => {
     if (!videoReady()) { wantAutoplay = !wantAutoplay; syncPlayLabel(); return; }  // 還沒載好:切換「好了要不要自動播」,不假播
-    video.paused ? safePlay() : video.pause();
+    video.paused ? safePlay() : safePause();
   };
   video.addEventListener('canplay', () => {
     if (wantAutoplay && video.paused && video.currentTime < 0.05) {
@@ -840,18 +864,18 @@
   video.addEventListener('seeking', updateTimeUI);
   $('seek').oninput = e => { video.currentTime = e.target.value / 1000 * (video.duration || 0); };
   document.querySelectorAll('[data-skip]').forEach(b =>
-    b.onclick = () => { video.pause(); video.currentTime = Math.max(0, video.currentTime + parseFloat(b.dataset.skip)); updateTimeUI(); });  // 慢網路 seek 未完成前,時間軸/秒數先動,按了就看得到有吃到
+    b.onclick = () => { safePause(); video.currentTime = Math.max(0, video.currentTime + parseFloat(b.dataset.skip)); updateTimeUI(); });  // 慢網路 seek 未完成前,時間軸/秒數先動,按了就看得到有吃到
   document.querySelectorAll('[data-rate]').forEach(b =>
     b.onclick = () => video.playbackRate = parseFloat(b.dataset.rate));
   document.addEventListener('keydown', e => {
     if (e.target.matches('input[type=text], input:not([type]), textarea')) return;
     if (!video.src || !videoId) return;
-    if (e.code === 'Space') { e.preventDefault(); video.paused ? safePlay() : video.pause(); }
-    if (e.key === 'Enter') { e.preventDefault(); video.pause(); $('noteText').focus(); }  // 播放中按 Enter=暫停+直接輸入
-    if (e.key === 'ArrowLeft')  { video.pause(); video.currentTime -= 0.5; }
-    if (e.key === 'ArrowRight') { video.pause(); video.currentTime += 0.5; }
-    if (e.key === ',') { video.pause(); video.currentTime -= 1 / 30; }
-    if (e.key === '.') { video.pause(); video.currentTime += 1 / 30; }
+    if (e.code === 'Space') { e.preventDefault(); video.paused ? safePlay() : safePause(); }
+    if (e.key === 'Enter') { e.preventDefault(); safePause(); $('noteText').focus(); }  // 播放中按 Enter=暫停+直接輸入
+    if (e.key === 'ArrowLeft')  { safePause(); video.currentTime -= 0.5; }
+    if (e.key === 'ArrowRight') { safePause(); video.currentTime += 0.5; }
+    if (e.key === ',') { safePause(); video.currentTime -= 1 / 30; }
+    if (e.key === '.') { safePause(); video.currentTime += 1 / 30; }
   });
 
   /* ── 存註記 ── */
@@ -878,7 +902,7 @@
     if (!video.src) return;
     const text = $('noteText').value.trim();
     if (!text && !strokes.length && !pendingRefs.length) return;
-    video.pause();
+    safePause();
     let t = video.currentTime, t2 = null;
     if (rangeStart !== null) {
       t = rangeStart;
@@ -906,7 +930,7 @@
         e.preventDefault();
         $('noteText').value = '';
         $('noteText').blur();
-        video.paused ? safePlay() : video.pause();
+        video.paused ? safePlay() : safePause();
       } else if (video.src) {
         const now = Date.now();
         if (now - lastSpaceTs < 350) {
@@ -975,12 +999,12 @@
       if (st && st.done) li.classList.add('done');
       const mainRow = document.createElement('div'); mainRow.className = 'nMain';
       const listImg = safeImg(n.img);
-      if (listImg) { const im = document.createElement('img'); im.src = listImg; im.onclick = () => { video.currentTime = n.t; video.pause(); }; mainRow.append(im); }
+      if (listImg) { const im = document.createElement('img'); im.src = listImg; im.onclick = () => { video.currentTime = n.t; safePause(); }; mainRow.append(im); }
       const metaBox = document.createElement('div'); metaBox.className = 'meta';
       const tc = document.createElement('div'); tc.className = 'tc'; tc.textContent = '⏱ ' + fmt(n.t) + (n.t2 != null ? ' → ' + fmt(n.t2) : '');
       if (owner) { const by = document.createElement('span'); by.className = 'by'; by.textContent = owner; tc.append(by); }
       const tx = document.createElement('div'); tx.className = 'txt'; tx.textContent = n.text || '(只有畫圖)';
-      tc.onclick = () => { video.currentTime = n.t; video.pause(); };
+      tc.onclick = () => { video.currentTime = n.t; safePause(); };
       metaBox.append(tc, tx);
       if (n.refs && n.refs.length) {  // 附的參考圖(點了放大)
         const rb = document.createElement('div'); rb.className = 'refs';
