@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>影片回饋系統</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; } /* manipulation=保留捲動+雙指縮放,只殺「雙擊縮放」:iOS 快速連按 +1s/播放會觸發整頁縮放亂跳+單擊判定延遲 */
   body { background: #16161a; color: #eee; font-family: "PingFang TC", "Heiti TC", sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
   header { padding: 10px 16px; background: #202027; display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
   header h1 { font-size: 16px; font-weight: 600; cursor: pointer; }
@@ -799,7 +799,9 @@
      新版:①載入中按播放=排「載入後自動播放」,按鈕誠實顯示 ②影片就緒自動嘗試播放
      (瀏覽器擋 autoplay 就維持暫停,按鈕不說謊)③每 400ms 對齊按鈕字樣與實際 paused 狀態 */
   let wantAutoplay = true;   // 預設:載入完就自動播(她的期待);被瀏覽器拒絕就乖乖顯示 ▶
-  const videoReady = () => video.src && video.readyState >= 2;
+  let everReady = false;     // 串流影片每次跳秒 readyState 會暫降<2;就緒過一次後播放鍵永遠走 play/pause,不再落入「載入中」死鍵分支
+  video.addEventListener('canplay', () => { everReady = true; });
+  const videoReady = () => video.src && (everReady || video.readyState >= 2);
   function syncPlayLabel() {
     if (!videoReady()) {
       $('playBtn').textContent = wantAutoplay ? '⏳ 載入中,好了自動播(按此取消)' : '▶ 播放';
@@ -808,31 +810,43 @@
     $('playBtn').textContent = video.paused ? '▶ 播放' : '⏸ 暫停';
   }
   setInterval(syncPlayLabel, 400);
+  /* Chromium 實測(2026-08-27):seek 還沒完成時呼叫 play(),瀏覽器會自己中止播放請求(AbortError)且元素回到 paused
+     →「連按跳秒後馬上按播放」第一下永遠蒸發=她回報的不靈敏主因;被中止就掛 seeked 補播,點擊不蒸發 */
+  function safePlay() {
+    video.play().catch(err => {
+      if (err && err.name === 'AbortError') {
+        if (video.seeking) video.addEventListener('seeked', () => { if (video.paused) video.play().catch(() => syncPlayLabel()); }, { once: true });
+        else if (video.paused) video.play().catch(() => syncPlayLabel());
+      } else syncPlayLabel();  // NotAllowedError 等:乖乖顯示 ▶,不說謊
+    });
+  }
   $('playBtn').onclick = () => {
     if (!videoReady()) { wantAutoplay = !wantAutoplay; syncPlayLabel(); return; }  // 還沒載好:切換「好了要不要自動播」,不假播
-    video.paused ? video.play().catch(() => syncPlayLabel()) : video.pause();
+    video.paused ? safePlay() : video.pause();
   };
   video.addEventListener('canplay', () => {
     if (wantAutoplay && video.paused && video.currentTime < 0.05) {
       wantAutoplay = false;
-      video.play().catch(() => syncPlayLabel());  // iOS 擋無手勢 autoplay 就作罷,按鈕會顯示 ▶
+      safePlay();  // iOS 擋無手勢 autoplay 就作罷,按鈕會顯示 ▶
     }
   }, { once: true });
   video.addEventListener('play', () => { syncPlayLabel(); strokes = []; redraw(); });
   video.addEventListener('pause', syncPlayLabel);
-  video.addEventListener('timeupdate', () => {
+  function updateTimeUI() {
     $('seek').value = video.duration ? video.currentTime / video.duration * 1000 : 0;
     $('timeLabel').textContent = `${fmt(video.currentTime)} / ${fmt(video.duration || 0)}`;
-  });
+  }
+  video.addEventListener('timeupdate', updateTimeUI);
+  video.addEventListener('seeking', updateTimeUI);
   $('seek').oninput = e => { video.currentTime = e.target.value / 1000 * (video.duration || 0); };
   document.querySelectorAll('[data-skip]').forEach(b =>
-    b.onclick = () => { video.pause(); video.currentTime = Math.max(0, video.currentTime + parseFloat(b.dataset.skip)); });
+    b.onclick = () => { video.pause(); video.currentTime = Math.max(0, video.currentTime + parseFloat(b.dataset.skip)); updateTimeUI(); });  // 慢網路 seek 未完成前,時間軸/秒數先動,按了就看得到有吃到
   document.querySelectorAll('[data-rate]').forEach(b =>
     b.onclick = () => video.playbackRate = parseFloat(b.dataset.rate));
   document.addEventListener('keydown', e => {
     if (e.target.matches('input[type=text], input:not([type]), textarea')) return;
     if (!video.src || !videoId) return;
-    if (e.code === 'Space') { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+    if (e.code === 'Space') { e.preventDefault(); video.paused ? safePlay() : video.pause(); }
     if (e.key === 'Enter') { e.preventDefault(); video.pause(); $('noteText').focus(); }  // 播放中按 Enter=暫停+直接輸入
     if (e.key === 'ArrowLeft')  { video.pause(); video.currentTime -= 0.5; }
     if (e.key === 'ArrowRight') { video.pause(); video.currentTime += 0.5; }
@@ -892,14 +906,14 @@
         e.preventDefault();
         $('noteText').value = '';
         $('noteText').blur();
-        video.paused ? video.play() : video.pause();
+        video.paused ? safePlay() : video.pause();
       } else if (video.src) {
         const now = Date.now();
         if (now - lastSpaceTs < 350) {
           e.preventDefault();
           $('noteText').value = $('noteText').value.replace(/ $/, '');
           $('noteText').blur();
-          video.play();
+          safePlay();
         }
         lastSpaceTs = now;
       }
