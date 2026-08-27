@@ -61,6 +61,9 @@
   #btnRow button { background: #2b2b33; color: #eee; border: none; border-radius: 6px; padding: 7px 12px; font-size: 13px; cursor: pointer; }
   #btnRow button:hover { background: #3a3a44; }
   #btnRow button.primary { background: #e46a5d; font-weight: 600; }
+  #playBtn { min-width: 112px; }  /* 播放鍵字樣變化不准改變寬度:寬度一變整排按鈕位移,她瞄準暫停會點到旁邊的跳秒鍵(2026-08-27 事故) */
+  #bufBadge { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.68); color: #ffd97d; padding: 6px 14px; border-radius: 999px; font-size: 13px; z-index: 6; pointer-events: none; white-space: nowrap; }
+  #bufBadge[hidden] { display: none; }
   #btnRow button.armed { background: #e8b84a; color: #16161a; font-weight: 700; }
   #btnRow .sep { width: 1px; height: 22px; background: #3a3a44; margin: 0 4px; }
   #btnRow .hint { color: #777; font-size: 11.5px; margin-left: auto; }
@@ -257,6 +260,7 @@
         <video id="video" playsinline crossorigin="anonymous" preload="auto"></video>
         <canvas id="ink"></canvas>
         <div id="videoLoading" hidden><div class="spinner"></div><div id="videoLoadingText">影片載入中…</div></div>
+        <div id="bufBadge" hidden>⏳ 緩衝中…</div>
       </div>
     </div>
     <div id="controls">
@@ -559,7 +563,7 @@
         const swapPlay = resumeWasPlaying && !video.paused;
         // iOS 對 blob 影片不見得會發 loadeddata:先強制 seek 逼它畫出第一格
         video.addEventListener('loadedmetadata', () => { try { video.currentTime = swapT; } catch (e) {} }, { once: true });
-        if (swapPlay) video.addEventListener('canplay', () => safePlay(), { once: true });
+        if (swapPlay) { resumeIntent = true; video.addEventListener('canplay', () => { if (resumeIntent) { resumeIntent = false; safePlay(); } }, { once: true }); }  // 換檔瞬間她若按了暫停(safePause 清旗標)就不續播
         video.src = URL.createObjectURL(new Blob(chunks, { type: 'video/mp4' }));
         video.load();
         $('videoLoadingText').textContent = '處理中…';
@@ -577,9 +581,10 @@
       if (isIOS) video.removeAttribute('crossorigin');  // iOS 大檔:改無 crossorigin 串流(截圖會失效但播得動)
       video.addEventListener('error', () => { setStatus('串流失敗,改用下載模式…'); loadViaBlob(); }, { once: true });
       // 2026-08-27 她回報「播一下下又卡住」:串流被網路餓死,播放中自己斷糧 3 次就切整支下載模式(下載完不會再卡,續播原秒數)
+      // ⚠️ 只限非 iOS:iOS 會走到串流路徑=檔案>200MB,整檔進記憶體 Safari 會掛(200MB 上限就是為此設的),iOS 大檔只能忍串流
       let stallCount = 0, stallSwitched = false;
       video.addEventListener('waiting', () => {
-        if (stallSwitched || video.paused || video.seeking) return;  // 跳秒造成的等待不算斷糧
+        if (stallSwitched || isIOS || video.paused || video.seeking) return;  // 跳秒造成的等待不算斷糧
         stallCount++;
         if (stallCount >= 3 && (!entry || !entry.size || entry.size <= 500 * 1048576)) {
           stallSwitched = true;
@@ -818,31 +823,29 @@
   video.addEventListener('canplay', () => { everReady = true; });
   const videoReady = () => video.src && (everReady || video.readyState >= 2);
   function syncPlayLabel() {
-    if (!videoReady()) {
-      $('playBtn').textContent = wantAutoplay ? '⏳ 載入中,好了自動播(按此取消)' : '▶ 播放';
-      return;
-    }
-    if (video.paused) $('playBtn').textContent = '▶ 播放';
-    else if (video.readyState < 3 || video.seeking) $('playBtn').textContent = '⏳ 緩衝中…(按此暫停)';  // 播放中斷糧:按鍵有吃到,是網路在等,不能看起來像沒反應
-    else $('playBtn').textContent = '⏸ 暫停';
+    // ⚠️ 按鈕字樣長度嚴禁隨狀態變長:寬度一變整排按鈕位移,她會點到旁邊的跳秒鍵(2026-08-27 事故);緩衝/載入細節一律走浮在影片上的 #bufBadge
+    if (!videoReady()) $('playBtn').textContent = wantAutoplay ? '⏳ 好了自動播' : '▶ 播放';
+    else $('playBtn').textContent = video.paused ? '▶ 播放' : '⏸ 暫停';
+    const buffering = videoReady() && !video.paused && (video.readyState < 3 || video.seeking);
+    $('bufBadge').hidden = !buffering;
   }
   setInterval(syncPlayLabel, 400);
   ['waiting', 'playing', 'stalled', 'seeked'].forEach(t => video.addEventListener(t, syncPlayLabel));
   /* Chromium 實測(2026-08-27):seek 還沒完成時呼叫 play(),瀏覽器會自己中止播放請求(AbortError)且元素回到 paused
-     →「連按跳秒後馬上按播放」第一下永遠蒸發=她回報的不靈敏主因;被中止就記 resumeAfterSeek,seek 完補播,點擊不蒸發;
-     任何「明確暫停」(safePause)都取消補播,不會暫停完又自己復活 */
-  let resumeAfterSeek = false;
+     →「連按跳秒後馬上按播放」第一下永遠蒸發=她回報的不靈敏主因;被中止就記 resumeIntent,seek 完補播,點擊不蒸發;
+     resumeIntent=「等一下要自動恢復播放」的唯一旗標(seek 補播/切下載模式續播共用),任何明確暫停(safePause)都取消它,不會暫停完又自己復活 */
+  let resumeIntent = false;
   function safePlay() {
     video.play().catch(err => {
       if (err && err.name === 'AbortError') {
-        if (video.seeking) resumeAfterSeek = true;
+        if (video.seeking) resumeIntent = true;
         else if (video.paused) video.play().catch(() => syncPlayLabel());
       } else syncPlayLabel();  // NotAllowedError 等:乖乖顯示 ▶,不說謊
     });
   }
-  function safePause() { resumeAfterSeek = false; video.pause(); }
+  function safePause() { resumeIntent = false; video.pause(); }
   video.addEventListener('seeked', () => {
-    if (resumeAfterSeek) { resumeAfterSeek = false; if (video.paused) video.play().catch(() => syncPlayLabel()); }
+    if (resumeIntent) { resumeIntent = false; if (video.paused) video.play().catch(() => syncPlayLabel()); }
   });
   $('playBtn').onclick = () => {
     if (!videoReady()) { wantAutoplay = !wantAutoplay; syncPlayLabel(); return; }  // 還沒載好:切換「好了要不要自動播」,不假播
