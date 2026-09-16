@@ -38,6 +38,24 @@
   .dir-item .dm { font-size: 12px; color: #9a9aa5; white-space: nowrap; }
   .dirDel { background: none; border: none; font-size: 16px; cursor: pointer; opacity: .55; padding: 6px; }
   .dirDel:hover { opacity: 1; }
+  /* 多選刪除(2026-09-16):選取模式=每列左側勾選框、單刪鈕藏起、底部浮出動作列 */
+  .dir-title-row { display: flex; align-items: center; justify-content: space-between; margin: 26px 0 10px; }
+  .dir-title-row .dir-title { margin: 0; }
+  .selBtn { background: #2d2d37; color: #ddd; border: 1px solid #444; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .selBtn:hover { background: #3a3a46; }
+  .selBtn.on { background: #e8b84a; color: #1a1a1e; border-color: #e8b84a; font-weight: 600; }
+  .dirChk { display: none; width: 20px; height: 20px; flex: none; accent-color: #e46a5d; cursor: pointer; margin: 0; }
+  #dirList.selmode .dirChk { display: block; }
+  #dirList.selmode .dirDel { display: none; }
+  #dirList.selmode .dir-item.sel { background: #3a2a2e; box-shadow: inset 0 0 0 1px #e46a5d; }
+  #selBar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(calc(100% - 32px), 860px); box-sizing: border-box; display: none; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; background: #1c1c23; border: 1px solid #444; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.5); z-index: 50; }
+  #dirList.selmode { padding-bottom: 90px; }  /* 浮動列不蓋住最後幾支 */
+  #selBar.show { display: flex; }
+  #selBar .selCount { flex: 1; font-size: 14px; font-weight: 600; min-width: 90px; }
+  #selBar button { border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  #selBar .selAll, #selBar .selCancel { background: #2d2d37; color: #ddd; }
+  #selBar .selDelete { background: #e46a5d; color: #fff; font-weight: 600; }
+  #selBar .selDelete:disabled { opacity: .5; cursor: default; }
   #safariWarn { background: #4a3416; color: #e8b84a; padding: 8px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 4px; }
   #dirEmpty { color: #666; font-size: 13px; }
 
@@ -248,8 +266,17 @@
       <div id="upBarWrap"><div id="upBar"></div></div>
       <div id="upLabel">上傳中…</div>
     </div>
-    <div class="dir-title">📚 歷史影片</div>
+    <div class="dir-title-row">
+      <div class="dir-title">📚 歷史影片</div>
+      <button id="selModeBtn" class="selBtn" title="勾選多支影片一次刪除">☑ 選取</button>
+    </div>
     <div id="dirList"><div id="dirEmpty">載入中…</div></div>
+    <div id="selBar">
+      <span class="selCount">已選 0 支</span>
+      <button class="selAll">全選</button>
+      <button class="selCancel">取消</button>
+      <button class="selDelete" disabled>🗑 刪除所選</button>
+    </div>
   </div>
 </div>
 
@@ -414,6 +441,11 @@
         const dn = document.createElement('div'); dn.className = 'dn'; dn.textContent = '🎬 ' + v.name.replace(/\.[^.]+$/, '');
         const dm = document.createElement('div'); dm.className = 'dm';
         dm.textContent = `${fmtSize(v.size) ? fmtSize(v.size) + '|' : ''}${v.noteCount || 0} 條註記${v.users && v.users.length ? '|' + v.users.join('、') : ''}|${(v.updatedAt || v.uploadedAt || '').slice(0, 10)}`;
+        const chk = document.createElement('input');  // 多選模式的勾選框(selmode 時才顯示)
+        chk.type = 'checkbox'; chk.className = 'dirChk'; chk.checked = selected.has(v.id);
+        chk.onclick = (e) => { e.stopPropagation(); toggleSel(v.id, chk.checked, d); };
+        if (chk.checked) d.classList.add('sel');
+        d.dataset.id = v.id;
         const del = document.createElement('button');
         del.className = 'dirDel'; del.textContent = '🗑'; del.title = '刪除這支影片';
         del.onclick = async (e) => {
@@ -436,12 +468,93 @@
           } catch (err) { alert('刪除失敗(網路)'); }
           del.disabled = false; del.textContent = '🗑';
         };
-        d.append(dn, dm, del);
-        d.onclick = () => { location.href = `?v=${encodeURIComponent(v.id)}&n=${encodeURIComponent(v.name)}`; };
+        d.append(chk, dn, dm, del);
+        d.onclick = () => {
+          if (selMode) { chk.checked = !chk.checked; toggleSel(v.id, chk.checked, d); return; }  // 選取模式:點整列=勾選,不進影片
+          location.href = `?v=${encodeURIComponent(v.id)}&n=${encodeURIComponent(v.name)}`;
+        };
         $('dirList').append(d);
       });
+      homeVids = vids;
+      selected.forEach(id => { if (!vids.some(v => v.id === id)) selected.delete(id); });  // 目錄重載後清掉已不存在的
+      updateSelBar();
     } catch (e) { $('dirList').innerHTML = '<div id="dirEmpty">⚠ 讀不到目錄,檢查網路或後端設定</div>'; }
   }
+
+  /* ══ 多選刪除(2026-09-16):前端逐支呼叫既有 deleteVideo,後端不動;密碼同單刪(sessionStorage 當次免重輸)══ */
+  let selMode = false, homeVids = [], deleting = false;
+  const selected = new Set();
+  function toggleSel(id, on, row) {
+    on ? selected.add(id) : selected.delete(id);
+    if (row) row.classList.toggle('sel', on);
+    updateSelBar();
+  }
+  function setSelMode(on) {
+    selMode = on;
+    if (!on) { selected.clear(); $('dirList').querySelectorAll('.dir-item.sel').forEach(r => r.classList.remove('sel')); $('dirList').querySelectorAll('.dirChk').forEach(c => c.checked = false); }
+    $('dirList').classList.toggle('selmode', on);
+    $('selModeBtn').classList.toggle('on', on);
+    $('selModeBtn').textContent = on ? '✕ 結束選取' : '☑ 選取';
+    $('selBar').classList.toggle('show', on);
+    updateSelBar();
+  }
+  function updateSelBar() {
+    const n = selected.size;
+    if (!deleting) {  // 她的目的=釋放 R2 空間,所選合計容量直接顯示
+      const bytes = homeVids.filter(v => selected.has(v.id)).reduce((a, v) => a + (v.size || 0), 0);
+      $('selBar').querySelector('.selCount').textContent = `已選 ${n} 支` + (bytes ? `,共 ${fmtSize(bytes)}` : '');
+    }
+    $('selBar').querySelector('.selDelete').disabled = deleting || n === 0;
+    $('selBar').querySelector('.selAll').textContent = (homeVids.length && n === homeVids.length) ? '全不選' : '全選';
+  }
+  $('selModeBtn').onclick = () => { if (!deleting) setSelMode(!selMode); };
+  $('selBar').querySelector('.selCancel').onclick = () => { if (!deleting) setSelMode(false); };
+  $('selBar').querySelector('.selAll').onclick = () => {
+    if (deleting) return;
+    const all = homeVids.length && selected.size === homeVids.length;
+    homeVids.forEach(v => { const row = $('dirList').querySelector(`.dir-item[data-id="${CSS.escape(v.id)}"]`); if (row) row.querySelector('.dirChk').checked = !all; toggleSel(v.id, !all, row); });
+  };
+  $('selBar').querySelector('.selDelete').onclick = async () => {
+    if (deleting || !selected.size) return;
+    const targets = homeVids.filter(v => selected.has(v.id));
+    const names = targets.map(v => '・' + v.name);
+    const shown = names.slice(0, 8).join('\n') + (names.length > 8 ? `\n…等共 ${names.length} 支` : '');
+    const anyR2 = targets.some(v => v.key);
+    const warn = `確定刪除以下 ${targets.length} 支影片?\n${shown}\n\n影片和所有人的註記會一起刪除` + (anyR2 ? '【永久刪除,無法復原】。' : '(影片移到 Drive 垃圾桶,30 天內可救回)。');
+    if (!confirm(warn)) return;
+    let pin = sessionStorage.getItem('deletePin') || '';
+    if (!pin) { pin = (prompt('輸入刪除密碼(跟蘋果妹拿):') || '').trim(); if (!pin) return; }
+    deleting = true;
+    const cnt = $('selBar').querySelector('.selCount');
+    const btns = $('selBar').querySelectorAll('button');
+    btns.forEach(b => b.disabled = true);
+    $('selModeBtn').disabled = true;
+    const failed = [];
+    let done = 0, badPin = false;
+    for (const v of targets) {  // 逐支循序刪(後端 LockService 單線,平行送只會互等)
+      cnt.textContent = `刪除中 ${done + 1}/${targets.length}:${v.name}`;
+      try {
+        const r = await apiPost({ action: 'deleteVideo', id: v.id, deleteKey: pin });
+        if (r.ok) {
+          sessionStorage.setItem('deletePin', pin);
+          const row = $('dirList').querySelector(`.dir-item[data-id="${CSS.escape(v.id)}"]`);
+          if (row) row.remove();  // 成功一支就從畫面拿掉一支,看得到進度
+          selected.delete(v.id);
+          homeVids = homeVids.filter(x => x.id !== v.id);
+        } else if (r.error === 'wrong delete password') { sessionStorage.removeItem('deletePin'); badPin = true; break; }
+        else failed.push(v.name + '(' + (r.error || '未知錯誤') + ')');
+      } catch (err) { failed.push(v.name + '(網路)'); }
+      done++;
+    }
+    deleting = false;
+    btns.forEach(b => b.disabled = false);
+    $('selModeBtn').disabled = false;
+    if (badPin) { alert('刪除密碼錯誤,已停止(尚未刪除的影片仍保留勾選)'); updateSelBar(); return; }
+    if (failed.length) alert(`有 ${failed.length} 支刪除失敗:\n` + failed.join('\n'));
+    else toast(`已刪除 ${done} 支影片`);
+    setSelMode(false);
+    renderHome();
+  };
 
   const dz = $('dropzone');
   dz.onclick = () => $('upInput').click();
